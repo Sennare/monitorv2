@@ -20,6 +20,17 @@ async def temperature_sensor() -> AsyncIterator[float]:
             await asyncio.sleep(1.0)
 
 
+async def humidity_sensor() -> AsyncIterator[float]:
+    while True:
+        try:
+            await asyncio.sleep(2.0)
+            humidity = 50.0 + random.uniform(-10.0, 10.0)
+            yield max(0.0, min(100.0, humidity))
+        except Exception as error:
+            print(f"[hal] Humidity sensor error: {error}")
+            await asyncio.sleep(1.0)
+
+
 async def rotary_encoder() -> AsyncIterator[int]:
     step_options = [-1, 0, 1]
     while True:

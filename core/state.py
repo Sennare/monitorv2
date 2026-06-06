@@ -16,6 +16,8 @@ class AppState:
     ])
     selected_index: int = 0
     temperature_c: float = 22.0
+    humidity_percent: float = 50.0
+    is_idle: bool = True
 
     def selected_item(self) -> str:
         return self.menu_items[self.selected_index]

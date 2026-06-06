@@ -21,5 +21,13 @@ def update_temperature(state: AppState, temperature_c: float) -> None:
     state.temperature_c = temperature_c
 
 
+def update_humidity(state: AppState, humidity_percent: float) -> None:
+    state.humidity_percent = max(0.0, min(100.0, humidity_percent))
+
+
+def set_idle_state(state: AppState, idle: bool) -> None:
+    state.is_idle = idle
+
+
 def reset_menu(state: AppState) -> None:
     state.selected_index = 0
