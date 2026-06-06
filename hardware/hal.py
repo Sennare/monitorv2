@@ -37,8 +37,10 @@ def _init_real_sensor() -> bool:
             _temperature_reader = read_dht
             _real_sensor_available = True
             return True
-        except (ImportError, AttributeError):
-            pass
+        except ImportError as e:
+            print(f"[hal] DHT sensor libraries not available: {e}")
+        except Exception as e:
+            print(f"[hal] DHT sensor initialization failed: {e}")
         
         # Try BME280 sensor as fallback
         try:
@@ -59,24 +61,39 @@ def _init_real_sensor() -> bool:
             _temperature_reader = read_bme280
             _real_sensor_available = True
             return True
-        except (ImportError, AttributeError):
-            pass
+        except ImportError as e:
+            print(f"[hal] BME280 sensor libraries not available: {e}")
+        except Exception as e:
+            print(f"[hal] BME280 sensor initialization failed: {e}")
         
-        # Try generic sensor via pyA20
+        # Try DHT via RPi.GPIO (legacy approach for older setups)
         try:
-            from pyA20.gpio import gpio
-            from pyA20.gpio import port
+            import RPi.GPIO as GPIO
+            import Adafruit_DHT
             
-            # This is a fallback for other Allwinner boards
-            print("[hal] Real sensor support for Allwinner boards (requires custom implementation)")
-            _real_sensor_available = False
-        except (ImportError, AttributeError):
-            pass
+            sensor = Adafruit_DHT.DHT22
+            pin = 4
+            
+            def read_dht_legacy() -> tuple[float, float]:
+                humidity, temperature = Adafruit_DHT.read_retry(sensor, pin)
+                if humidity is None or temperature is None:
+                    raise HardwareReadError("Failed to read DHT sensor (legacy)")
+                return float(temperature), float(humidity)
+            
+            _temperature_reader = read_dht_legacy
+            _real_sensor_available = True
+            print("[hal] Real DHT sensor initialized via legacy Adafruit_DHT on GPIO 4")
+            return True
+        except ImportError as e:
+            print(f"[hal] Legacy DHT libraries not available: {e}")
+        except Exception as e:
+            print(f"[hal] Legacy DHT initialization failed: {e}")
         
     except Exception as e:
-        print(f"[hal] Real sensor initialization failed: {e}")
+        print(f"[hal] Unexpected error during sensor initialization: {e}")
         _real_sensor_available = False
     
+    print("[hal] No real sensors detected, will use mock data")
     return False
 
 
