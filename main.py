@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import signal
+import sys
 from datetime import datetime
 from typing import Optional
 
@@ -28,6 +29,7 @@ class Application:
         self.running = True
         self.last_temp: float = 22.0
         self.last_humidity: float = 50.0
+        self.tasks = []
         
         # Initialize display devices
         self.debug_display = DebugDisplay()
@@ -67,6 +69,9 @@ class Application:
             except asyncio.TimeoutError:
                 print("[sensor] Read timeout")
                 await asyncio.sleep(5)
+            except asyncio.CancelledError:
+                print("[sensor] Cancelled")
+                break
             except Exception as e:
                 print(f"[sensor] Error: {e}")
                 await asyncio.sleep(5)
@@ -93,6 +98,9 @@ class Application:
                 await self.weather_repo.persist_measurement(measurement)
                 print(f"[db] Stored measurement: {measurement}")
                 
+            except asyncio.CancelledError:
+                print("[db] Cancelled")
+                break
             except Exception as e:
                 print(f"[db] Error: {e}")
                 await asyncio.sleep(10)
@@ -122,6 +130,9 @@ class Application:
                 print("[display] Screen OFF")
                 await asyncio.sleep(30)
                 
+            except asyncio.CancelledError:
+                print("[screensaver] Cancelled")
+                break
             except Exception as e:
                 print(f"[screensaver] Error: {e}")
                 await asyncio.sleep(5)
@@ -129,19 +140,35 @@ class Application:
     async def monitor_encoder(self) -> None:
         """Monitor rotary encoder for user input."""
         print("[app] Encoder monitor started")
-        async for step in rotary_encoder():
-            if not self.running:
-                break
-            
-            if step != 0:
-                print(f"[encoder] User input detected: {step}")
-                # User input detected - could be used to exit idle state
-                # in a full implementation with a menu system
+        try:
+            async for step in rotary_encoder():
+                if not self.running:
+                    break
+                
+                if step != 0:
+                    print(f"[encoder] User input detected: {step}")
+                    # User input detected - could be used to exit idle state
+                    # in a full implementation with a menu system
+        except asyncio.CancelledError:
+            print("[encoder] Cancelled")
+        except Exception as e:
+            print(f"[encoder] Error: {e}")
 
     async def shutdown(self) -> None:
-        """Graceful shutdown."""
+        """Graceful shutdown - cancels all tasks and closes resources."""
         print("[app] Shutting down...")
         self.running = False
+        
+        # Cancel all background tasks
+        for task in self.tasks:
+            if not task.done():
+                task.cancel()
+        
+        # Wait for all tasks to complete cancellation
+        if self.tasks:
+            await asyncio.gather(*self.tasks, return_exceptions=True)
+        
+        # Close resources
         await self.db_client.close()
         await self.debug_display.close()
         await self.oled_display.close()
@@ -153,7 +180,7 @@ class Application:
         set_idle_state(self.state, True)
         
         # Create background tasks
-        tasks = [
+        self.tasks = [
             asyncio.create_task(self.sensor_reader()),
             asyncio.create_task(self.database_writer()),
             asyncio.create_task(self.screensaver_loop()),
@@ -162,16 +189,13 @@ class Application:
         
         try:
             # Run all tasks concurrently
-            await asyncio.gather(*tasks)
+            await asyncio.gather(*self.tasks)
         except asyncio.CancelledError:
             print("[app] Tasks cancelled")
         except KeyboardInterrupt:
             print("[app] Keyboard interrupt")
         finally:
             await self.shutdown()
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
 
 
 async def main() -> None:
@@ -180,13 +204,21 @@ async def main() -> None:
     
     def handle_signal(signum, frame):
         print("[main] Received signal, initiating shutdown")
+        # Schedule the shutdown coroutine to run in the event loop
         asyncio.create_task(app.shutdown())
     
     # Register signal handlers
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
     
-    await app.run()
+    try:
+        await app.run()
+    except KeyboardInterrupt:
+        print("[main] Interrupted")
+        await app.shutdown()
+    except Exception as e:
+        print(f"[main] Fatal error: {e}")
+        raise
 
 
 if __name__ == "__main__":
@@ -196,4 +228,3 @@ if __name__ == "__main__":
         print("\nApplication stopped")
     except Exception as e:
         print(f"Fatal error: {e}")
-        raise
