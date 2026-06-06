@@ -110,8 +110,11 @@ class Application:
         print("[app] Screen saver started")
         
         # Initialize displays
-        await self.debug_display.initialize()
-        await self.oled_display.initialize()
+        try:
+            await self.debug_display.initialize()
+            await self.oled_display.initialize()
+        except Exception as e:
+            print(f"[screensaver] Error initializing displays: {e}")
         
         while self.running:
             try:
@@ -128,6 +131,11 @@ class Application:
                 
                 # Display OFF for 30 seconds
                 print("[display] Screen OFF")
+                for display in self.displays:
+                    try:
+                        await display.clear()
+                    except Exception as e:
+                        print(f"[display] Error clearing display: {e}")
                 await asyncio.sleep(30)
                 
             except asyncio.CancelledError:
