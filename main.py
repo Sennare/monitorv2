@@ -1,19 +1,25 @@
-import oled
 import asyncio
+
+import oled
+import emotion_state_manager
+from state import EventType, Mood, SetMood, StateStore
+
 
 class Application:
     def __init__(self):
         self.tasks: list[asyncio.Task[None]] = []
         self.oled_display = oled.OledDisplay()
+        self.emotion_manager = emotion_state_manager.EmotionStateManager()
+        self.state_store = StateStore()
+
         print("[app] Initializing application")
-        self.oled_display.display_message("Remote Monitor")
 
     async def run(self) -> None:
         print("[app] Starting monitor application...")
         
         # Create background tasks
-        self.tasks= [
-            # asyncio.create_task(self.sensor_reader()),
+        self.tasks = [
+            asyncio.create_task(self.emotion_manager.startWorker()),
         ]
         
         await asyncio.gather(*self.tasks)
