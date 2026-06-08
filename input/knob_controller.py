@@ -1,6 +1,6 @@
 import asyncio
 from gpiozero import Button
-from state import KnobBtnPressed, StateStore
+from state import Knob, StateStore, KnobUserAction
 
 DEFAULT_PINS = (17, 27, 22)
 COOLDOWN_SECONDS = 0.1
@@ -16,6 +16,7 @@ class KnobController:
         self.pin_cooldowns: dict[int, int] = {}
         self.state_store = StateStore()
         self.loop: asyncio.AbstractEventLoop | None = None
+        self.last_rotation_pin: int | None = None
 
         print("[knob] Initializing KnobController")
         self._setup_pins()
@@ -41,7 +42,7 @@ class KnobController:
             return
 
         self.pin_states[pin] = new_state
-        print(f"[knob] GPIO {pin} changed: {old_state} -> {new_state}")
+        #print(f"[knob] GPIO {pin} changed: {old_state} -> {new_state}")
 
         if self.pin_cooldowns.get(pin, 0) != 0:
             return
@@ -50,8 +51,24 @@ class KnobController:
         asyncio.create_task(self._reset_cooldown(pin))
 
         if pin == 17 and new_state == "HIGH":
-            print("[knob] Dispatching KnobBtnPressed event")
-            self.state_store.dispatch(KnobBtnPressed())
+            print("[knob] Dispatching Knob event for btn press")
+            self.state_store.dispatch(Knob(KnobUserAction.PRESS))
+        elif pin in (27, 22) and new_state == "HIGH":
+            # Detect rotation direction based on pin sequence
+            if self.last_rotation_pin == 27 and pin == 22:
+                # 27 went HIGH first, then 22 → left rotation
+                print("[knob] Dispatching Knob event for left rotation")
+                self.state_store.dispatch(Knob(KnobUserAction.TURN_LEFT))
+                self.last_rotation_pin = None
+            elif self.last_rotation_pin == 22 and pin == 27:
+                # 22 went HIGH first, then 27 → right rotation
+                print("[knob] Dispatching Knob event for right rotation")
+                self.state_store.dispatch(Knob(KnobUserAction.TURN_RIGHT))
+                self.last_rotation_pin = None
+            else:
+                # Start of a new rotation sequence
+                print(f"[knob] Rotation sequence start: pin {pin} HIGH")
+                self.last_rotation_pin = pin
 
     async def _reset_cooldown(self, pin: int) -> None:
         await asyncio.sleep(COOLDOWN_SECONDS)

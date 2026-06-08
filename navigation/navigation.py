@@ -13,7 +13,7 @@ class Navigation:
         self.location = Location.HOME
         self.state_store = StateStore()
         self.current_location : AbstractLocation = Home()
-        self.state_store.subscribe(EventType.KNOB_BTN_PRESSED.value, self._on_knob_btn_pressed)
+        self.state_store.subscribe(EventType.KNOB.value, self._on_knob_btn_pressed)
         self.render()
 
     def _on_knob_btn_pressed(self, new_mood: Mood) -> None:

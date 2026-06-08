@@ -19,13 +19,18 @@ class Mood(Enum):
 
 class ActionType(str, Enum):
     SET_MOOD = "SetMood"
-    KNOB_BTN_PRESSED = "KnobBtnPressed"
+    KNOB = "Knob"
 
 
 class EventType(str, Enum):
     STATE_UPDATED = "state.updated"
     MOOD_CHANGED = "mood.changed"
-    KNOB_BTN_PRESSED = "knob.btn.pressed"
+    KNOB = "knob"
+
+class KnobUserAction(str, Enum):
+    PRESS = "press"
+    TURN_LEFT = "turn_left"
+    TURN_RIGHT = "turn_right"
 
 
 @dataclass(frozen=True)
@@ -42,11 +47,12 @@ class SetMood(Action):
         super().__init__(ActionType.SET_MOOD, mood)
 
 @dataclass(frozen=True)
-class KnobBtnPressed(Action):
-    payload: None = None
+class Knob(Action):
+    payload: KnobUserAction = KnobUserAction.PRESS
 
-    def __init__(self) -> None:
-        super().__init__(ActionType.KNOB_BTN_PRESSED, self.payload)
+    def __init__(self, action: KnobUserAction = KnobUserAction.PRESS) -> None:
+        object.__setattr__(self, 'payload', action)
+        object.__setattr__(self, 'type', ActionType.KNOB)
 
 
 @dataclass(frozen=True)
@@ -59,6 +65,6 @@ def reduce_state(state: AppState, action: Action) -> AppState:
         if not isinstance(action.payload, Mood):
             raise ValueError("SetMood action payload must be a Mood value.")
         return AppState(mood=action.payload)
-    if action.type == ActionType.KNOB_BTN_PRESSED:
+    if action.type == ActionType.KNOB:
         return state
     return state

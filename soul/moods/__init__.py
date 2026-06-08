@@ -8,7 +8,7 @@ def load_frames(mood_name: str) -> List[Image.Image]:
     Falls back to neutral if not found.
     """
     try:
-        mod = importlib.import_module(f"moods.{mood_name}")
+        mod = importlib.import_module(f"soul.moods.{mood_name}")
         return mod.get_frames()
     except Exception:
         # fallback to neutral
