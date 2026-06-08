@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw, ImageFont
 from state import EventType, Mood, SetMood, StateStore
 import threading
 import time
-from moods import load_frames
+from soul.moods import load_frames
 
 class OledDisplay:
     def __init__(self):
@@ -46,6 +46,7 @@ class OledDisplay:
                 try:
                     self.device.display(frame)
                 except Exception:
+                    print("[oled] Error displaying frame, skipping...")
                     pass
                 idx += 1
                 # 500ms per frame
