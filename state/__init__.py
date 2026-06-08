@@ -1,4 +1,4 @@
-from .events import AppState, Action, ActionType, EventType, Mood, SetMood
+from .events import AppState, Action, ActionType, EventType, Mood, SetMood, KnobBtnPressed
 from .store import EventBus, StateStore
 
 __all__ = [

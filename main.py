@@ -2,6 +2,7 @@ import asyncio
 
 import oled
 import emotion_state_manager
+import knob_controller
 from state import EventType, Mood, SetMood, StateStore
 
 
@@ -10,6 +11,7 @@ class Application:
         self.tasks: list[asyncio.Task[None]] = []
         self.oled_display = oled.OledDisplay()
         self.emotion_manager = emotion_state_manager.EmotionStateManager()
+        self.knob_controller = knob_controller.KnobController()
         self.state_store = StateStore()
 
         print("[app] Initializing application")
@@ -20,6 +22,7 @@ class Application:
         # Create background tasks
         self.tasks = [
             asyncio.create_task(self.emotion_manager.startWorker()),
+            asyncio.create_task(self.knob_controller.start_worker()),
         ]
         
         await asyncio.gather(*self.tasks)

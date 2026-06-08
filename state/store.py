@@ -67,6 +67,8 @@ class StateStore:
 
         if action.type == ActionType.SET_MOOD:
             self.bus.publish(EventType.MOOD_CHANGED.value, self._state.mood)
+        if action.type == ActionType.KNOB_BTN_PRESSED:
+            self.bus.publish(EventType.KNOB_BTN_PRESSED.value, None)
 
     def subscribe(self, event_type: str, callback: Callable[[Any], None]) -> Callable[[], None]:
         return self.bus.subscribe(event_type, callback)
