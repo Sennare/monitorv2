@@ -1,8 +1,8 @@
 import asyncio
 
-import oled
-import emotion_state_manager
-import knob_controller
+import display.oled as oled
+import soul.emotion_state_manager as emotion_state_manager
+import input.knob_controller as knob_controller
 from state import EventType, Mood, SetMood, StateStore
 
 
