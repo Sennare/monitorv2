@@ -70,7 +70,7 @@ class StateStore:
         if action.type == ActionType.KNOB:
             self.bus.publish(EventType.KNOB.value, None)
         if action.type == ActionType.SET_ENVIRONMENT:
-            self.bus.publish(EventType.ENVIRONMENT_CHANGED.value, self._state.someone_around)
+            self.bus.publish(EventType.ENVIRONMENT_CHANGED.value, self._state)
         if action.type == ActionType.SET_TEMP_HUMI:
             self.bus.publish(EventType.ENVIRONMENT_CHANGED.value, self._state)
 

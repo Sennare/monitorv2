@@ -1,7 +1,7 @@
 from luma.core.interface.serial import i2c
 from luma.oled.device import ssd1306
 from PIL import Image, ImageDraw, ImageFont
-from state import EventType, Mood, SetMood, StateStore
+from state import EventType, Mood, SetMood, StateStore, AppState
 import threading
 import time
 from soul.moods import load_frames
@@ -14,7 +14,7 @@ class OledDisplay:
 
         self.state_store = StateStore()
         self.state_store.subscribe(EventType.MOOD_CHANGED.value, self._on_mood_changed)
-        self.state_store.subscribe(EventType.ENVIRONMENT_CHANGED.value, self._on_someone_around_changed)
+        self.state_store.subscribe(EventType.ENVIRONMENT_CHANGED.value, self._on_env_changed)
 
         self.current_mood = Mood.NEUTRAL
         
@@ -31,8 +31,8 @@ class OledDisplay:
         self.current_mood = mood
         self._mood_changed_event.set() # Interrompe immediatamente il time.sleep del thread
 
-    def _on_someone_around_changed(self, someone_around: bool) -> None:
-        if (someone_around):
+    def _on_env_changed(self, app_state: AppState) -> None:
+        if (app_state.someone_around):
             self.device.show()
         else:
             self.device.hide()

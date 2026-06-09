@@ -7,6 +7,7 @@ from state import EventType, Mood, SetMood, StateStore
 from navigation.navigation import Navigation
 from input.movement import Movement
 from input.temp import Temp
+from database.librian import Librian
 
 class Application:
     def __init__(self):
@@ -18,6 +19,7 @@ class Application:
         self.state_store = StateStore()
         self.navigation = Navigation()
         self.temp = Temp()
+        self.librian = Librian()
 
         print("[app] Initializing application")
 
