@@ -6,6 +6,7 @@ import input.knob_controller2 as knob_controller
 from state import EventType, Mood, SetMood, StateStore
 from navigation.navigation import Navigation
 from input.movement import Movement
+from input.temp import Temp
 
 class Application:
     def __init__(self):
@@ -16,6 +17,7 @@ class Application:
         self.movement = Movement()
         self.state_store = StateStore()
         self.navigation = Navigation()
+        self.temp = Temp()
 
         print("[app] Initializing application")
 

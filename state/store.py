@@ -71,6 +71,8 @@ class StateStore:
             self.bus.publish(EventType.KNOB.value, None)
         if action.type == ActionType.SET_ENVIRONMENT:
             self.bus.publish(EventType.ENVIRONMENT_CHANGED.value, self._state.someone_around)
+        if action.type == ActionType.SET_TEMP_HUMI:
+            self.bus.publish(EventType.ENVIRONMENT_CHANGED.value, self._state)
 
     def subscribe(self, event_type: str, callback: Callable[[Any], None]) -> Callable[[], None]:
         return self.bus.subscribe(event_type, callback)

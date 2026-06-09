@@ -17,11 +17,16 @@ class Mood(Enum):
     BORED = "bored"
     LOOKING_AROUND = "looking_around"
 
+@dataclass(frozen=True)
+class TempAndHumi:
+    temperature: float
+    humidity: float
 
 class ActionType(str, Enum):
     SET_MOOD = "SetMood"
     KNOB = "Knob"
     SET_ENVIRONMENT = "SetEnvironment"
+    SET_TEMP_HUMI = "SetTempHumi"
 
 
 class EventType(str, Enum):
@@ -65,9 +70,18 @@ class SetSomeoneAround(Action):
         super().__init__(ActionType.SET_ENVIRONMENT, someone_around)
 
 @dataclass(frozen=True)
+class SetTemAndHumi(Action):
+    payload: TempAndHumi = TempAndHumi(0, 0)
+
+    def __init__(self, temp_and_humi: TempAndHumi) -> None:
+        super().__init__(ActionType.SET_TEMP_HUMI, temp_and_humi)
+
+@dataclass(frozen=True)
 class AppState:
     mood: Mood = Mood.NEUTRAL
     someone_around: bool = False
+    temperature: float = 0
+    humidity: float = 0
 
 def reduce_state(state: AppState, action: Action) -> AppState:
     if action.type == ActionType.SET_MOOD:
@@ -80,4 +94,8 @@ def reduce_state(state: AppState, action: Action) -> AppState:
         if not isinstance(action.payload, bool):
             raise ValueError("SetEnvironment action payload must be a bool value.")
         return replace(state, someone_around=action.payload)
+    if action.type == ActionType.SET_TEMP_HUMI:
+        if not isinstance(action.payload, TempAndHumi):
+            raise ValueError("SetTempAndHumi action payload must be a TempAndHumi.")
+        return replace(state, temperature = action.payload.temperature, humidity = action.payload.humidity)
     return state

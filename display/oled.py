@@ -49,6 +49,8 @@ class OledDisplay:
                 last_mood = self.current_mood
                 try:
                     frames = load_frames(last_mood.value)
+                except KeyboardInterrupt:
+                    self.device.hide()
                 except Exception:
                     frames = [Image.new("1", (128, 64))]
                 idx = 0 # Resetta l'indice dell'animazione
@@ -58,6 +60,8 @@ class OledDisplay:
                 frame = frames[idx % len(frames)]
                 try:
                     self.device.display(frame)
+                except KeyboardInterrupt:
+                    self.device.hide()
                 except Exception:
                     print("[oled] Error displaying frame, skipping...")
                 idx += 1
@@ -75,5 +79,7 @@ class OledDisplay:
         draw.text((10, 10), message, fill="white", font=self.font)
         try:
             self.device.display(image)
+        except KeyboardInterrupt:
+            self.device.hide()
         except Exception:
             pass
