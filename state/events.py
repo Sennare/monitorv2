@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Any
 
@@ -20,12 +20,14 @@ class Mood(Enum):
 class ActionType(str, Enum):
     SET_MOOD = "SetMood"
     KNOB = "Knob"
+    SET_ENVIRONMENT = "SetEnvironment"
 
 
 class EventType(str, Enum):
     STATE_UPDATED = "state.updated"
     MOOD_CHANGED = "mood.changed"
     KNOB = "knob"
+    ENVIRONMENT_CHANGED = "environment.changed"
 
 class KnobUserAction(str, Enum):
     PRESS = "press"
@@ -41,7 +43,7 @@ class Action:
 
 @dataclass(frozen=True)
 class SetMood(Action):
-    payload: Mood
+    payload: Mood = Mood.NEUTRAL
 
     def __init__(self, mood: Mood) -> None:
         super().__init__(ActionType.SET_MOOD, mood)
@@ -54,17 +56,27 @@ class Knob(Action):
         object.__setattr__(self, 'payload', action)
         object.__setattr__(self, 'type', ActionType.KNOB)
 
+@dataclass(frozen=True)
+class SetSomeoneAround(Action):
+    payload: bool = False
+
+    def __init__(self, someone_around) -> None:
+        super().__init__(ActionType.SET_ENVIRONMENT, someone_around)
 
 @dataclass(frozen=True)
 class AppState:
     mood: Mood = Mood.NEUTRAL
-
+    someone_around: bool = False
 
 def reduce_state(state: AppState, action: Action) -> AppState:
     if action.type == ActionType.SET_MOOD:
         if not isinstance(action.payload, Mood):
             raise ValueError("SetMood action payload must be a Mood value.")
-        return AppState(mood=action.payload)
+        return replace(state, mood=action.payload)
     if action.type == ActionType.KNOB:
         return state
+    if action.type == ActionType.SET_ENVIRONMENT:
+        if not isinstance(action.payload, bool):
+            raise ValueError("SetEnvironment action payload must be a bool value.")
+        return replace(state, someone_around=action.payload)
     return state

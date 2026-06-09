@@ -1,4 +1,4 @@
-from .events import AppState, Action, ActionType, EventType, Mood, SetMood, Knob, KnobUserAction
+from .events import AppState, Action, ActionType, EventType, Mood, SetMood, Knob, KnobUserAction, SetSomeoneAround
 from .store import EventBus, StateStore
 
 __all__ = [
@@ -12,4 +12,5 @@ __all__ = [
     "SetMood",
     "Knob",
     "KnobUserAction",
+    "SetSomeoneAround",
 ]

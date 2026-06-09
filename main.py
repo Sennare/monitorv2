@@ -5,6 +5,7 @@ import soul.emotion_state_manager as emotion_state_manager
 import input.knob_controller2 as knob_controller
 from state import EventType, Mood, SetMood, StateStore
 from navigation.navigation import Navigation
+from input.movement import Movement
 
 class Application:
     def __init__(self):
@@ -12,6 +13,7 @@ class Application:
         self.oled_display = oled.OledDisplay()
         self.emotion_manager = emotion_state_manager.EmotionStateManager()
         self.knob_controller = knob_controller.KnobController()
+        self.movement = Movement()
         self.state_store = StateStore()
         self.navigation = Navigation()
 

@@ -14,6 +14,7 @@ class OledDisplay:
 
         self.state_store = StateStore()
         self.state_store.subscribe(EventType.MOOD_CHANGED.value, self._on_mood_changed)
+        self.state_store.subscribe(EventType.ENVIRONMENT_CHANGED.value, self._on_someone_around_changed)
 
         self.current_mood = Mood.NEUTRAL
         
@@ -29,6 +30,12 @@ class OledDisplay:
         print(f"[oled] Mood changed to {mood.value}, signaling display thread...")
         self.current_mood = mood
         self._mood_changed_event.set() # Interrompe immediatamente il time.sleep del thread
+
+    def _on_someone_around_changed(self, someone_around: bool) -> None:
+        if (someone_around):
+            self.device.show()
+        else:
+            self.device.hide()
 
     def _animation_loop(self) -> None:
         """Loop infinito del thread in background."""
