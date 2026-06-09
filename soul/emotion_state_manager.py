@@ -11,6 +11,7 @@ class EmotionStateManager:
         self.state_store = StateStore()
         self.state_store.dispatch(SetMood(Mood.NEUTRAL))
         self.state_store.subscribe(EventType.KNOB.value, self._on_knob_pressed)
+        self.state_store.subscribe(EventType.ENVIRONMENT_CHANGED.value, self._on_someone_around_changed)
         self.last_idle_mood = None
         self.idle_moods = [Mood.BORED, Mood.THINKING, Mood.CURIOUS]
         self.emotions_levels = {
@@ -24,6 +25,7 @@ class EmotionStateManager:
             Mood.TOO_COLD: 0,
             Mood.TOO_HOT: 0,
             Mood.BORED: 0,
+            Mood.LOOKING_AROUND: 0,
         }
     
     async def startWorker(self):
@@ -42,6 +44,11 @@ class EmotionStateManager:
     def _on_knob_pressed(self, _):
         self.reduce_all_emotions_levels(by=5, except_mood=Mood.HAPPY)
         self.increase_mood_level(Mood.HAPPY, by=5)
+    
+    def _on_someone_around_changed(self, someone_around: bool) -> None:
+        if someone_around:
+            self.reduce_all_emotions_levels(by=7, except_mood=Mood.LOOKING_AROUND)
+            self.increase_mood_level(Mood.LOOKING_AROUND, by=10)
 
     def check_and_update_mood(self):
         # Determine the mood with the highest level

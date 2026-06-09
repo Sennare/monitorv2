@@ -15,6 +15,7 @@ class Mood(Enum):
     TOO_COLD = "too_cold"
     TOO_HOT = "too_hot"
     BORED = "bored"
+    LOOKING_AROUND = "looking_around"
 
 
 class ActionType(str, Enum):
@@ -60,7 +61,7 @@ class Knob(Action):
 class SetSomeoneAround(Action):
     payload: bool = False
 
-    def __init__(self, someone_around) -> None:
+    def __init__(self, someone_around: bool) -> None:
         super().__init__(ActionType.SET_ENVIRONMENT, someone_around)
 
 @dataclass(frozen=True)

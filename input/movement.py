@@ -27,8 +27,9 @@ class Movement:
             print(f"[movement] Error setting up GPIO pins: {exc}")
     
     def _movement_detected(self) -> None:
-        print("[movement] Movement detected, dispatching SetSomeoneAround event")
-        self.state_store.dispatch(SetSomeoneAround(True))
+        if not self._no_movement_timer:
+            print("[movement] Movement detected, dispatching SetSomeoneAround event")
+            self.state_store.dispatch(SetSomeoneAround(True))
         
         # Gestione del timer per l'assenza di movimento
         with self._lock:
