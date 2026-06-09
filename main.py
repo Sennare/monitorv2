@@ -13,7 +13,7 @@ class Application:
         self.emotion_manager = emotion_state_manager.EmotionStateManager()
         self.knob_controller = knob_controller.KnobController()
         self.state_store = StateStore()
-        #self.navigation = Navigation()
+        self.navigation = Navigation()
 
         print("[app] Initializing application")
 
