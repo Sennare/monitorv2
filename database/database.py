@@ -1,12 +1,15 @@
 import psycopg2
 from datetime import datetime, timedelta
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 db_config = {
     "host": "localhost",
     "database": "sensor_data",
     "user": "sensor_user",
-    'password': os.environ.get('SENSOR_DB_PASSWORD')
+    'password': os.environ.get('DB_PASSWORD')
 }
 
 class Database:
