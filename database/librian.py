@@ -25,7 +25,7 @@ class Librian:
 
     def _persist_runner(self) -> None:
         while True:
-            time.sleep(10)
+            time.sleep(60*15)
             if not self.got_first_event:
                 continue
             try:

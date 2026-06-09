@@ -3,7 +3,6 @@ from luma.oled.device import ssd1306
 from PIL import Image, ImageDraw, ImageFont
 from state import EventType, Mood, SetMood, StateStore, AppState
 import threading
-import time
 from soul.moods import load_frames
 
 class OledDisplay:
