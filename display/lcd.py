@@ -33,6 +33,8 @@ class Lcd:
         self.addr = i2c_addr
         self.backlight = True
         self.display_on = True
+        # Timestamp of the last write to the LCD (used to auto-shutdown backlight)
+        self._last_write = time.time()
         
         # Cache per evitare di riscrivere caratteri identici (ottimizzazione fondamentale)
         self._current_lines = [" " * self.LCD_WIDTH] * self.LCD_HEIGHT
@@ -48,6 +50,10 @@ class Lcd:
         # Avvio del thread asincrono per la gestione dei testi
         self._worker_thread = threading.Thread(target=self._render_loop, daemon=True)
         self._worker_thread.start()
+
+        # Thread watchdog per spegnere la retroilluminazione dopo inattività
+        self._backlight_watchdog_thread = threading.Thread(target=self._backlight_watchdog, daemon=True)
+        self._backlight_watchdog_thread.start()
         
     def _send(self, data, mode=0):
         """Invia un byte riducendo al minimo i delay (gestiti dal bus I2C)."""
@@ -116,6 +122,20 @@ class Lcd:
                 # Aggiorna la cache
                 self._current_lines[row] = target_text
 
+    def _backlight_watchdog(self):
+        """Thread di controllo: spegne la retroilluminazione dopo 10s di inattività."""
+        while True:
+            time.sleep(0.5)
+            with self._lock:
+                last = getattr(self, "_last_write", 0)
+                bl = self.backlight
+            if bl and (time.time() - last) >= 10:
+                try:
+                    self.set_backlight(False)
+                except Exception:
+                    # Non bloccare il watchdog su errori I2C
+                    pass
+
     # -------------------------------------------------------------------------
     # API PUBBLICHE (Chiamate dal thread principale - Istantanee e Non-Bloccanti)
     # -------------------------------------------------------------------------
@@ -128,18 +148,33 @@ class Lcd:
         # Pulisce e formatta la stringa a 20 caratteri fissi
         formatted_text = text.ljust(self.LCD_WIDTH)[:self.LCD_WIDTH]
         
+        # Aggiorna il buffer e marca l'attività più recente
+        need_backlight_on = False
         with self._lock:
             self._target_lines[row] = formatted_text
+            self._last_write = time.time()
+            if not self.backlight:
+                need_backlight_on = True
+
+        if need_backlight_on:
+            self.set_backlight(True)
+
         self._update_event.set()
 
     def write(self, line1="", line2="", line3="", line4=""):
         """Aggiorna in modo asincrono l'intero schermo (4 righe)."""
         lines = [line1, line2, line3, line4]
-        
+        need_backlight_on = False
         with self._lock:
             for i, line in enumerate(lines):
                 self._target_lines[i] = line.ljust(self.LCD_WIDTH)[:self.LCD_WIDTH]
-                
+            self._last_write = time.time()
+            if not self.backlight:
+                need_backlight_on = True
+
+        if need_backlight_on:
+            self.set_backlight(True)
+
         self._update_event.set()
 
     def clear(self):
@@ -152,4 +187,7 @@ class Lcd:
         with self._lock:
             # Forza il refresh impostando la cache a stringhe vuote
             self._current_lines = [""] * self.LCD_HEIGHT 
+            if state:
+                # mark activity when re-enabling the light
+                self._last_write = time.time()
         self._update_event.set()
