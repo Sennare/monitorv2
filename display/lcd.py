@@ -1,11 +1,10 @@
 import smbus2
 import time
-
+import threading
 
 class Lcd:
-    """Gestione LCD 20x4 via I2C (compatibile HW-061)."""
+    """Gestione LCD 20x4 via I2C ottimizzata e non bloccante."""
     
-    # Indirizzo I2C (0x27 o 0x3F, verificare con i2cdetect)
     LCD_ADDR = 0x27
     LCD_WIDTH = 20
     LCD_HEIGHT = 4
@@ -24,121 +23,133 @@ class Lcd:
     LCD_ENTRYLEFT = 0x02
     LCD_ENTRYSHIFTINCREMENT = 0x01
     LCD_DISPLAYON = 0x04
-    LCD_DISPLAYOFF = 0x00
-    LCD_CURSORON = 0x02
-    LCD_CURSOROFF = 0x00
-    LCD_BLINKON = 0x01
-    LCD_BLINKOFF = 0x00
     LCD_BACKLIGHT = 0x08
     LCD_NOBACKLIGHT = 0x00
     
-    # Modalità 4-bit per 20x4
-    LCD_4BITMODE = 0x00
-    LCD_2LINE = 0x28  # Per 20x4, usiamo 2 linee ma con 4 righe (gestite via DDRAM)
-    LCD_5x8DOTS = 0x00
-    
-    # Indirizzi DDRAM per 20x4
     LCD_LINE_ADDRESSES = [0x00, 0x40, 0x14, 0x54]
     
     def __init__(self, i2c_addr=LCD_ADDR, bus=1):
-        """Inizializza il display con sequenza compatibile Arduino."""
         self.bus = smbus2.SMBus(bus)
         self.addr = i2c_addr
         self.backlight = True
         self.display_on = True
         
-        # Sequenza di inizializzazione per 20x4
+        # Cache per evitare di riscrivere caratteri identici (ottimizzazione fondamentale)
+        self._current_lines = [" " * self.LCD_WIDTH] * self.LCD_HEIGHT
+        self._target_lines = [" " * self.LCD_WIDTH] * self.LCD_HEIGHT
+        
+        # Threading e sincronizzazione
+        self._lock = threading.Lock()
+        self._update_event = threading.Event()
+        
+        # Inizializzazione hardware (sincrona, avviene solo all'avvio)
         self._init()
         
+        # Avvio del thread asincrono per la gestione dei testi
+        self._worker_thread = threading.Thread(target=self._render_loop, daemon=True)
+        self._worker_thread.start()
+        
     def _send(self, data, mode=0):
-        """Invia un byte al display (mode=0: comando, mode=1: dato)."""
-        # Bit alto/nibble alto
-        high_nib = mode | (data & 0xF0) | (self.LCD_BACKLIGHT if self.backlight else 0)
-        self.bus.write_byte(self.addr, high_nib)
-        time.sleep(0.001)
-        self.bus.write_byte(self.addr, high_nib | 0x04)
-        time.sleep(0.001)
-        self.bus.write_byte(self.addr, high_nib)
-        time.sleep(0.001)
+        """Invia un byte riducendo al minimo i delay (gestiti dal bus I2C)."""
+        backlight_bit = self.LCD_BACKLIGHT if self.backlight else 0
         
-        # Bit basso/nibble basso
-        low_nib = mode | ((data & 0x0F) << 4) | (self.LCD_BACKLIGHT if self.backlight else 0)
-        self.bus.write_byte(self.addr, low_nib)
-        time.sleep(0.001)
-        self.bus.write_byte(self.addr, low_nib | 0x04)
-        time.sleep(0.001)
-        self.bus.write_byte(self.addr, low_nib)
-        time.sleep(0.001)
+        # Bit alto / nibble alto
+        high_nib = mode | (data & 0xF0) | backlight_bit
+        self.bus.write_byte(self.addr, high_nib)
+        self.bus.write_byte(self.addr, high_nib | 0x04)  # Enable HIGH
+        self.bus.write_byte(self.addr, high_nib)         # Enable LOW
         
+        # Bit basso / nibble basso
+        low_nib = mode | ((data & 0x0F) << 4) | backlight_bit
+        self.bus.write_byte(self.addr, low_nib)
+        self.bus.write_byte(self.addr, low_nib | 0x04)   # Enable HIGH
+        self.bus.write_byte(self.addr, low_nib)          # Enable LOW
+        
+        # Piccolo delay di sicurezza per l'esecuzione del comando interno dell'LCD
+        time.sleep(0.00005) # 50 microsecondi (invece di 6 millisecondi!)
+
     def _init(self):
-        """Sequenza di inizializzazione per 20x4."""
+        """Sequenza di boot obbligatoria (eseguita una volta sola)."""
         time.sleep(0.1)
-        
-        # Sequenza di reset (3 volte)
         self._send(0x33, 0)
-        time.sleep(0.01)
+        time.sleep(0.005)
         self._send(0x33, 0)
-        time.sleep(0.01)
+        time.sleep(0.001)
         self._send(0x32, 0)
-        time.sleep(0.01)
+        time.sleep(0.001)
         
-        # Imposta 4-bit, 2 linee, 5x8 font
-        self._send(0x28, 0)
-        time.sleep(0.01)
-        
-        # Imposta contrasto massimo
-        self._send(0x70 | 0x0F, 0)
-        time.sleep(0.01)
-        
-        # Spegni display
-        self._send(0x08, 0)
-        time.sleep(0.01)
-        
-        # Cancella display
-        self._send(0x01, 0)
-        time.sleep(0.02)
-        
-        # Modalità entry: increment, no shift
-        self._send(0x06, 0)
-        time.sleep(0.01)
-        
-        # Accendi display
-        self._send(0x0C, 0)
-        time.sleep(0.01)
-        
-    def clear(self):
-        """Cancella il display."""
-        self._send(0x01, 0)
-        time.sleep(0.02)
-        
-    def set_backlight(self, state):
-        """Accende/spegne la retroilluminazione."""
-        self.backlight = state
-        self._send(0x00, 0)  # Aggiorna lo stato
-        
-    def set_cursor(self, col, row):
-        """Imposta la posizione del cursore (0-19, 0-3)."""
-        if row < 0 or row >= self.LCD_HEIGHT:
-            return
-        if col < 0 or col >= self.LCD_WIDTH:
-            return
+        self._send(0x28, 0) # 4-bit, 2 linee
+        self._send(0x0C, 0) # Display ON, Cursor OFF
+        self._send(0x06, 0) # Entry mode increment
+        self._send(0x01, 0) # Clear hardware iniziale
+        time.sleep(0.003)
+
+    def _set_cursor_immediate(self, col, row):
         address = self.LCD_LINE_ADDRESSES[row] + col
         self._send(0x80 | address, 0)
-        
+
+    def _render_loop(self):
+        """Loop del thread in background: scrive sul display solo quando serve."""
+        while True:
+            self._update_event.wait()
+            self._update_event.clear()
+            
+            # Copia locale dei dati per minimizzare il tempo di Lock
+            with self._lock:
+                lines_to_process = list(self._target_lines)
+                
+            if not self.display_on:
+                continue
+
+            for row in range(self.LCD_HEIGHT):
+                target_text = lines_to_process[row]
+                
+                # Se la riga attuale è già uguale a quella da scrivere, saltala!
+                if target_text == self._current_lines[row]:
+                    continue
+                
+                # Scrittura della riga modificata
+                self._set_cursor_immediate(0, row)
+                for char in target_text:
+                    self._send(ord(char), 1)
+                
+                # Aggiorna la cache
+                self._current_lines[row] = target_text
+
+    # -------------------------------------------------------------------------
+    # API PUBBLICHE (Chiamate dal thread principale - Istantanee e Non-Bloccanti)
+    # -------------------------------------------------------------------------
+
     def write_text(self, text, row=0):
-        """Scrive testo su una riga specifica (0-3)."""
-        if not self.display_on:
+        """Aggiorna in modo asincrono una singola riga (0-3)."""
+        if row < 0 or row >= self.LCD_HEIGHT:
             return
         
-        text = text.ljust(self.LCD_WIDTH)[:self.LCD_WIDTH]
-        self.set_cursor(0, row)
-        for char in text:
-            self._send(ord(char), 1)
+        # Pulisce e formatta la stringa a 20 caratteri fissi
+        formatted_text = text.ljust(self.LCD_WIDTH)[:self.LCD_WIDTH]
         
+        with self._lock:
+            self._target_lines[row] = formatted_text
+        self._update_event.set()
+
     def write(self, line1="", line2="", line3="", line4=""):
-        """Scrive testo su tutte e 4 le righe."""
-        self.clear()
-        self.write_text(line1, 0)
-        self.write_text(line2, 1)
-        self.write_text(line3, 2)
-        self.write_text(line4, 3)
+        """Aggiorna in modo asincrono l'intero schermo (4 righe)."""
+        lines = [line1, line2, line3, line4]
+        
+        with self._lock:
+            for i, line in enumerate(lines):
+                self._target_lines[i] = line.ljust(self.LCD_WIDTH)[:self.LCD_WIDTH]
+                
+        self._update_event.set()
+
+    def clear(self):
+        """Svuota lo schermo in modo intelligente (senza sfarfallio)."""
+        self.write("", "", "", "")
+
+    def set_backlight(self, state):
+        """Accende o spegne la retroilluminazione istantaneamente."""
+        self.backlight = state
+        with self._lock:
+            # Forza il refresh impostando la cache a stringhe vuote
+            self._current_lines = [""] * self.LCD_HEIGHT 
+        self._update_event.set()
