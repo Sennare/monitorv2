@@ -23,8 +23,27 @@ async function fetchData(timeframe) {
 function mapSeries(data) {
   // data: [{timestamp, temperature, humidity}, ...]
   const labels = data.map(d => d.timestamp);
-  const temps = data.map(d => d.temperature === null ? null : Number(d.temperature.toFixed(2)));
-  const hums = data.map(d => d.humidity === null ? null : Number(d.humidity.toFixed(2)));
+  const rawTemps = data.map(d => d.temperature === null ? null : Number(Number(d.temperature).toFixed(2)));
+  const rawHums = data.map(d => d.humidity === null ? null : Number(Number(d.humidity).toFixed(2)));
+
+  // Forward-fill nulls so short gaps don't break the line (helps dense 24h slots)
+  function forwardFill(arr) {
+    const out = [];
+    let last = null;
+    for (let i = 0; i < arr.length; i++) {
+      const v = arr[i];
+      if (v === null || v === undefined) {
+        out.push(last);
+      } else {
+        out.push(v);
+        last = v;
+      }
+    }
+    return out;
+  }
+
+  const temps = forwardFill(rawTemps);
+  const hums = forwardFill(rawHums);
   return { labels, temps, hums };
 }
 
