@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Environment Dashboard</title>
+    <title>Temperature casa Frizzellato</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       // Tailwind config for dark mode
@@ -23,7 +23,7 @@
   <body class="min-h-screen text-gray-100 antialiased bg-gradient-to-b from-slate-900 via-slate-950 to-black">
     <div class="max-w-6xl mx-auto p-6">
       <header class="flex items-center justify-between mb-6">
-        <h1 class="text-2xl font-semibold tracking-tight">Environment Dashboard</h1>
+        <h1 class="text-2xl font-semibold tracking-tight">Temperature casa Frizzellato</h1>
         <div class="space-x-2">
           <button id="btn-24h" class="time-btn px-3 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-sm">Last 24 Hours</button>
           <button id="btn-7d" class="time-btn px-3 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-sm">Last 7 Days</button>
@@ -33,12 +33,12 @@
 
       <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div class="p-4 rounded-xl bg-gradient-to-br from-slate-900/60 to-slate-800/40 border border-slate-700">
-          <h2 class="text-sm text-slate-300 mb-2">Temperature</h2>
+          <h2 class="text-sm text-slate-300 mb-2">Temperatura</h2>
           <div id="chart-temp" class="h-80"></div>
         </div>
 
         <div class="p-4 rounded-xl bg-gradient-to-br from-slate-900/60 to-slate-800/40 border border-slate-700">
-          <h2 class="text-sm text-slate-300 mb-2">Humidity</h2>
+          <h2 class="text-sm text-slate-300 mb-2">Umidità</h2>
           <div id="chart-hum" class="h-80"></div>
         </div>
       </section>
@@ -46,6 +46,6 @@
       <footer class="mt-6 text-sm text-slate-500">Data source: local PostgreSQL. Charts update smoothly when timeframe changes.</footer>
     </div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js" defer></script>
   </body>
 </html>

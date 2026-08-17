@@ -6,6 +6,9 @@ const state = {
   timeframe: '24h',
   chartTemp: null,
   chartHum: null,
+  isUpdating: false,
+  refreshTimerId: null,
+  refreshIntervalMs: 60 * 1000, // 60 seconds
 };
 
 function isoToLocal(ts) {
@@ -52,18 +55,30 @@ function createCharts(labels, temps, hums) {
     chart: { toolbar: { show: false }, animations: { enabled: true, easing: 'easeout', speed: 600 } },
     stroke: { width: 2, curve: 'smooth' },
     xaxis: { type: 'datetime', categories: labels, labels: { style: { colors: '#94a3b8' } } },
-    tooltip: { theme: 'dark' },
+    tooltip: {
+      theme: 'dark',
+      x: {
+        // show full local date + time in tooltip
+        formatter: function (val) {
+          try {
+            return new Date(val).toLocaleString();
+          } catch (e) {
+            return val;
+          }
+        }
+      }
+    },
     theme: { mode: 'dark', palette: 'palette4' },
   };
 
   const tempOptions = Object.assign({}, commonOptions, {
-    series: [{ name: 'Temperature (°C)', data: temps }],
+    series: [{ name: 'Temperatura (°C)', data: temps }],
     yaxis: { title: { text: '°C' }, labels: { style: { colors: '#fb7185' } } },
     colors: ['#fb7185'],
   });
 
   const humOptions = Object.assign({}, commonOptions, {
-    series: [{ name: 'Humidity (%)', data: hums }],
+    series: [{ name: 'Umidità (%)', data: hums }],
     yaxis: { title: { text: '%' }, labels: { style: { colors: '#60a5fa' } } },
     colors: ['#60a5fa'],
   });
@@ -79,6 +94,8 @@ function createCharts(labels, temps, hums) {
 }
 
 async function updateCharts(timeframe, firstLoad = false) {
+  if (state.isUpdating) return; // avoid overlapping refreshes
+  state.isUpdating = true;
   const container = document.querySelector('#chart-temp').closest('div');
   try {
     container.classList.add('opacity-60');
@@ -90,8 +107,8 @@ async function updateCharts(timeframe, firstLoad = false) {
       // Smooth update via updateOptions / updateSeries
       state.chartTemp.updateOptions({ xaxis: { categories: labels } });
       state.chartHum.updateOptions({ xaxis: { categories: labels } });
-      state.chartTemp.updateSeries([{ name: 'Temperature (°C)', data: temps }], true);
-      state.chartHum.updateSeries([{ name: 'Humidity (%)', data: hums }], true);
+      state.chartTemp.updateSeries([{ name: 'Temperatura (°C)', data: temps }], true);
+      state.chartHum.updateSeries([{ name: 'Umidità (%)', data: hums }], true);
     }
   } catch (err) {
     console.error(err);
@@ -99,6 +116,7 @@ async function updateCharts(timeframe, firstLoad = false) {
     container.insertAdjacentHTML('beforeend', '<div class="text-red-400 mt-2">Error loading data</div>');
   } finally {
     container.classList.remove('opacity-60');
+    state.isUpdating = false;
   }
 }
 
@@ -127,6 +145,20 @@ function bindButtons() {
 }
 
 // Initialize
+function startAutoRefresh(){
+  if (state.refreshTimerId) return;
+  state.refreshTimerId = setInterval(()=>{
+    // don't force firstLoad so charts update smoothly
+    updateCharts(state.timeframe, false).catch(e=>console.error('Auto-refresh failed', e));
+  }, state.refreshIntervalMs);
+}
+
+function stopAutoRefresh(){
+  if (!state.refreshTimerId) return;
+  clearInterval(state.refreshTimerId);
+  state.refreshTimerId = null;
+}
+
 async function init() {
   bindButtons();
   setActiveButton('btn-24h');
@@ -135,6 +167,7 @@ async function init() {
   } catch (e) {
     console.error('Initial update failed', e);
   }
+  startAutoRefresh();
 }
 
 if (document.readyState === 'loading') {
@@ -143,3 +176,7 @@ if (document.readyState === 'loading') {
   // DOM already ready (script may have been loaded dynamically) — run immediately
   init();
 }
+
+window.addEventListener('beforeunload', ()=>{
+  stopAutoRefresh();
+});
