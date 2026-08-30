@@ -8,7 +8,7 @@ class Movement:
 
     def __init__(self) -> None:
         self.state_store = StateStore()
-        self.movement_sensor = Button(11, bounce_time=0.1, pull_up=False)
+        self.movement_sensor = Button(5, bounce_time=0.1, pull_up=False)
         
         # Inizializziamo una variabile per tenere traccia del timer
         self._no_movement_timer: threading.Timer | None = None
