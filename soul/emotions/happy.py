@@ -1,5 +1,4 @@
 from .base_emotion import BaseEmotion
-from state import StateStore, EventType
 
 
 class Happy:
@@ -7,11 +6,9 @@ class Happy:
 
     def __init__(self):
         self.emotion = BaseEmotion()
-        self.state_store = StateStore()
-        self.state_store.subscribe(EventType.KNOB.value, self._on_knob_interacted)
 
     def _on_knob_interacted(self, _) -> None:
-        self.emotion.increase_level(35)
+        self.emotion.increase_level(60)
 
     def tick(self) -> None:
         pass

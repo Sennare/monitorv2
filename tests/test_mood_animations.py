@@ -51,6 +51,30 @@ class TestMoodAnimations(unittest.TestCase):
         self.assertGreater(len(frames), 0)
         self.assertEqual(frames[0].size, (128, 64))
 
+    def test_frame_counts_sufficient_for_high_fps(self):
+        """Verify each mood produces at least 20 frames for smooth 20 FPS playback."""
+        for mood in Mood:
+            with self.subTest(mood=mood.value):
+                frames = load_frames(mood.value)
+                self.assertGreaterEqual(
+                    len(frames),
+                    20,
+                    f"Mood {mood.value} has only {len(frames)} frames, which is too short for smooth 20 FPS"
+                )
+
+    def test_oled_display_fps_configuration(self):
+        """Verify OledDisplay defaults to 20 FPS and accepts custom framerates."""
+        from display.oled import OledDisplay, DEFAULT_FPS
+        self.assertEqual(DEFAULT_FPS, 20.0)
+
+        disp = OledDisplay()
+        self.assertEqual(disp.fps, 20.0)
+        self.assertAlmostEqual(disp.frame_delay, 0.05, places=4)
+
+        disp_custom = OledDisplay(fps=25.0)
+        self.assertEqual(disp_custom.fps, 25.0)
+        self.assertAlmostEqual(disp_custom.frame_delay, 0.04, places=4)
+
 
 if __name__ == "__main__":
     unittest.main()

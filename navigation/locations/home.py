@@ -235,7 +235,66 @@ class Home(AbstractLocation):
         draw.text((cx - hw // 2, cy + 12), humi_str, font=font_humi, fill=humi_color)
 
         # ==========================================
-        # 4. Bottom Navigation Hint (Pill Button)
+        # 4. Modern Minimalist Mood Pill Badge
+        # ==========================================
+        self.mood = state.mood
+        raw_mood = self.mood.value if (self.mood and hasattr(self.mood, "value")) else str(self.mood or "neutral")
+        mood_key = raw_mood.lower()
+
+        mood_palette = {
+            "neutral": (148, 163, 184),
+            "happy": (52, 211, 153),
+            "sad": (96, 165, 250),
+            "angry": (248, 113, 113),
+            "curious": (34, 211, 238),
+            "confused": (232, 121, 249),
+            "thinking": (167, 139, 250),
+            "too_cold": (125, 211, 252),
+            "too_hot": (251, 146, 60),
+            "bored": (156, 163, 175),
+            "looking_around": (56, 189, 248),
+        }
+        mood_color = mood_palette.get(mood_key, (148, 163, 184))
+        mood_label = raw_mood.replace("_", " ").upper()
+
+        bbox_lbl = draw.textbbox((0, 0), "MOOD", font=font_pill)
+        lbl_w = bbox_lbl[2] - bbox_lbl[0]
+        sep_str = " · "
+        bbox_sep = draw.textbbox((0, 0), sep_str, font=font_pill)
+        sep_w = bbox_sep[2] - bbox_sep[0]
+        bbox_val = draw.textbbox((0, 0), mood_label, font=font_pill)
+        val_w = bbox_val[2] - bbox_val[0]
+
+        chip_h = 20
+        chip_y = 247
+        content_w = 8 + 8 + lbl_w + sep_w + val_w
+        chip_w = content_w + 16
+        chip_x0 = cx - chip_w // 2
+        chip_x1 = chip_x0 + chip_w
+
+        # Subtle dark capsule chip
+        draw.rounded_rectangle(
+            (chip_x0, chip_y, chip_x1, chip_y + chip_h),
+            radius=10,
+            fill=(22, 28, 40),
+            outline=(37, 46, 64),
+            width=1,
+        )
+
+        # Glowing accent dot
+        dot_cx = chip_x0 + 10
+        dot_cy = chip_y + chip_h // 2
+        draw.ellipse((dot_cx - 3, dot_cy - 3, dot_cx + 3, dot_cy + 3), fill=mood_color)
+        draw.ellipse((dot_cx - 1, dot_cy - 1, dot_cx + 1, dot_cy + 1), fill=(255, 255, 255))
+
+        # Typography
+        text_x = chip_x0 + 18
+        draw.text((text_x, chip_y + 4), "MOOD", font=font_pill, fill=(148, 163, 184))
+        draw.text((text_x + lbl_w, chip_y + 4), sep_str, font=font_pill, fill=(75, 85, 99))
+        draw.text((text_x + lbl_w + sep_w, chip_y + 4), mood_label, font=font_pill, fill=mood_color)
+
+        # ==========================================
+        # 5. Bottom Navigation Hint (Pill Button)
         # ==========================================
         hint_y = 282
         hint_h = 32

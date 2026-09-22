@@ -1,3 +1,4 @@
+import math
 from typing import Tuple
 from PIL import Image, ImageDraw
 
@@ -12,6 +13,28 @@ RIGHT_EYE_CENTER = (88, 32)
 DEFAULT_LEFT_BOX = (26, 17, 54, 47)
 DEFAULT_RIGHT_BOX = (74, 17, 102, 47)
 DEFAULT_RADIUS = 7
+
+
+def lerp(a: float, b: float, t: float) -> float:
+    """Linear interpolation between a and b for t in [0.0, 1.0]."""
+    return a + (b - a) * t
+
+
+def ease_in_out(t: float) -> float:
+    """Smooth S-curve ease-in-out (smoothstep) for t in [0.0, 1.0]."""
+    t = max(0.0, min(1.0, t))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def interpolate_box(box_a: Tuple[int, int, int, int], box_b: Tuple[int, int, int, int], t: float) -> Tuple[int, int, int, int]:
+    """Smoothly interpolate between two bounding boxes with easing."""
+    e = ease_in_out(t)
+    return (
+        int(round(lerp(box_a[0], box_b[0], e))),
+        int(round(lerp(box_a[1], box_b[1], e))),
+        int(round(lerp(box_a[2], box_b[2], e))),
+        int(round(lerp(box_a[3], box_b[3], e))),
+    )
 
 
 def new_frame() -> Tuple[Image.Image, ImageDraw.ImageDraw]:
@@ -45,6 +68,27 @@ def draw_squircle_eye(
 ) -> None:
     """Draw a solid rounded rectangle (squircle) robot eye."""
     draw.rounded_rectangle(box, radius=radius, fill=fill)
+
+
+def draw_squeezed_squircle_eye(
+    draw: ImageDraw.ImageDraw,
+    box: Tuple[int, int, int, int],
+    radius: int = 5,
+    squeeze_amount: float = 0.6,
+    fill: str = "white",
+) -> None:
+    """
+    Draw a happy/smiling squeezed squircle eye.
+    Maintains the rounded-rectangle squircle top and sides, while carving an upward
+    smiling arch from the bottom (cheek squeeze).
+    """
+    x0, y0, x1, y1 = box
+    draw.rounded_rectangle(box, radius=radius, fill=fill)
+    if squeeze_amount > 0.05:
+        h = y1 - y0
+        cut_y0 = y0 + int(h * (1.0 - squeeze_amount))
+        cut_y1 = y1 + int(h * 0.75)
+        draw.ellipse((x0 + 3, cut_y0, x1 - 3, cut_y1), fill=0)
 
 
 def draw_slit_eye(
@@ -107,15 +151,21 @@ def draw_spiral_eye(
     cx: int,
     cy: int,
     phase: int = 0,
-    fill: str = "white"
+    fill: str = "white",
+    r_outer: int = None,
+    r_mid: int = None,
+    r_inner: int = 3,
+    pupil_offset: Tuple[int, int] = (0, 0),
 ) -> None:
     """Draw concentric spiral/ring eyes for confusion/dizziness."""
-    r_outer = 14 + (phase % 2)
-    r_mid = 8 - (phase % 2)
-    r_inner = 3
+    if r_outer is None:
+        r_outer = 14 + (phase % 2)
+    if r_mid is None:
+        r_mid = 8 - (phase % 2)
     draw.ellipse((cx - r_outer, cy - r_outer, cx + r_outer, cy + r_outer), outline=fill, width=3)
     draw.ellipse((cx - r_mid, cy - r_mid, cx + r_mid, cy + r_mid), outline=fill, width=2)
-    draw.ellipse((cx - r_inner, cy - r_inner, cx + r_inner, cy + r_inner), fill=fill)
+    px, py = cx + pupil_offset[0], cy + pupil_offset[1]
+    draw.ellipse((px - r_inner, py - r_inner, px + r_inner, py + r_inner), fill=fill)
 
 
 def draw_eyebrow(

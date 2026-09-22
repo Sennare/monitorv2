@@ -155,23 +155,28 @@ class TestLCDCoreAndNavigation(unittest.TestCase):
         self.assertEqual(nav.current_location_id, Location.MENU.value)
 
     def test_home_render_tracks_temperature_and_humidity(self):
-        """Verify Home.render() tracks latest telemetry without error."""
+        """Verify Home.render() tracks latest telemetry and mood without error."""
         home = Home()
-        state = AppState(temperature=22.4, humidity=50.0)
+        state = AppState(temperature=22.4, humidity=50.0, mood=Mood.HAPPY)
         home.render(self.lcd, state)
         self.assertEqual(home.temperature, 22.4)
         self.assertEqual(home.humidity, 50.0)
+        self.assertEqual(home.mood, Mood.HAPPY)
 
         # Default state
         home_empty = Home()
         home_empty.render(self.lcd, AppState())
         self.assertEqual(home_empty.temperature, 0)
         self.assertEqual(home_empty.humidity, 0)
+        self.assertEqual(home_empty.mood, Mood.NEUTRAL)
 
-        # Cold rendering
-        home.render(self.lcd, AppState(temperature=8.0, humidity=40.0))
+        # Cold rendering with different moods
+        home.render(self.lcd, AppState(temperature=8.0, humidity=40.0, mood=Mood.TOO_COLD))
+        self.assertEqual(home.mood, Mood.TOO_COLD)
+
         # Hot rendering
-        home.render(self.lcd, AppState(temperature=35.0, humidity=80.0))
+        home.render(self.lcd, AppState(temperature=35.0, humidity=80.0, mood=Mood.TOO_HOT))
+        self.assertEqual(home.mood, Mood.TOO_HOT)
 
     def test_get_temp_color(self):
         """Verify temperature color changes from blue (cold) to green/yellow (mild) to red (hot)."""
@@ -313,6 +318,38 @@ class TestLCDCoreAndNavigation(unittest.TestCase):
         self.assertFalse(self.lcd.is_screen_on)
         self.assertEqual(self.lcd.get_effective_brightness(), 5)
         self.assertEqual(self.lcd.get_brightness(), 75, "Active brightness target preserved")
+
+    def test_knob_rotation_triggers_happy_emotion(self):
+        """Verify rotating knob immediately excites Happy emotion and updates mood."""
+        emotion_manager = EmotionStateManager()
+        self.assertEqual(self.store.state.mood, Mood.NEUTRAL)
+
+        # Rotate knob
+        self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))
+
+        self.assertEqual(self.store.state.mood, Mood.HAPPY)
+        self.assertGreaterEqual(emotion_manager.emotion_instances[Mood.HAPPY].get_emotion().level, 50)
+        emotion_manager.close()
+
+    def test_knob_then_settings_triggers_angry_emotion(self):
+        """Verify navigating to Settings after turning knob properly switches mood from Happy to Angry."""
+        emotion_manager = EmotionStateManager()
+        nav = Navigation(start_with_welcome=False)
+        self.navs.append(nav)
+
+        # Rotate knob -> triggers Happy
+        self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))
+        self.assertEqual(self.store.state.mood, Mood.HAPPY)
+
+        # Navigate to Settings -> must trigger Angry, overriding Happy
+        nav.navigate_to(Location.SETTINGS.value)
+        self.assertEqual(self.store.state.mood, Mood.ANGRY)
+        self.assertGreaterEqual(emotion_manager.emotion_instances[Mood.ANGRY].get_emotion().level, 50)
+
+        # Rotating knob while in Settings should not revert mood to Happy
+        self.store.dispatch(Knob(KnobUserAction.TURN_LEFT))
+        self.assertEqual(self.store.state.mood, Mood.ANGRY)
+        emotion_manager.close()
 
 
 if __name__ == "__main__":

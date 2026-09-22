@@ -78,7 +78,10 @@ class Navigation:
         if self._auto_refresh_thread.is_alive() and threading.current_thread() != self._auto_refresh_thread:
             self._auto_refresh_thread.join(timeout=1.0)
 
-        self.lcd.stop_animation()
+        if hasattr(self.lcd, "close"):
+            self.lcd.close()
+        else:
+            self.lcd.stop_animation()
         for unsub in self._unsubscribers:
             try:
                 unsub()

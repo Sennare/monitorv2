@@ -1,4 +1,10 @@
-from gpiozero import Button
+try:
+    from gpiozero import Button
+    GPIOZERO_AVAILABLE = True
+except (ImportError, NotImplementedError):
+    GPIOZERO_AVAILABLE = False
+    Button = None
+
 from state import StateStore, SetSomeoneAround
 import threading
 
@@ -8,7 +14,12 @@ class Movement:
 
     def __init__(self) -> None:
         self.state_store = StateStore()
-        self.movement_sensor = Button(5, bounce_time=0.1, pull_up=False)
+        self.movement_sensor = None
+        if GPIOZERO_AVAILABLE and Button is not None:
+            try:
+                self.movement_sensor = Button(5, bounce_time=0.1, pull_up=False)
+            except Exception as e:
+                print(f"[movement] GPIO init failed ({e}), using mock")
         
         # Timer tracking absence after movement
         self._no_movement_timer: threading.Timer | None = None
@@ -19,7 +30,7 @@ class Movement:
 
         # Check initial sensor status on startup
         try:
-            if self.movement_sensor.is_pressed:
+            if self.movement_sensor is not None and self.movement_sensor.is_pressed:
                 print("[movement] Sensor active on startup, dispatching True")
                 self._movement_detected()
             else:
@@ -30,6 +41,8 @@ class Movement:
 
     def _setup_pins(self) -> None:
         """Initialize GPIO pins as buttons."""
+        if self.movement_sensor is None:
+            return
         try:
             self.movement_sensor.when_pressed = self._movement_detected
         except Exception as exc:
@@ -52,7 +65,7 @@ class Movement:
         with self._lock:
             # If sensor is still actively triggered, re-arm timer instead of declaring absence
             try:
-                if self.movement_sensor.is_pressed:
+                if self.movement_sensor is not None and self.movement_sensor.is_pressed:
                     print("[movement] Sensor still active, extending absence timer")
                     self._no_movement_timer = threading.Timer(MOVEMENT_TIMEOUT_SECONDS, self._no_movement_timeout)
                     self._no_movement_timer.start()
@@ -65,3 +78,15 @@ class Movement:
 
         if self.state_store.state.someone_around:
             self.state_store.dispatch(SetSomeoneAround(False))
+
+    def close(self) -> None:
+        """Cancels background absence timer and releases GPIO sensor cleanly."""
+        with self._lock:
+            if self._no_movement_timer is not None:
+                self._no_movement_timer.cancel()
+                self._no_movement_timer = None
+        if hasattr(self, "movement_sensor") and self.movement_sensor is not None:
+            try:
+                self.movement_sensor.close()
+            except Exception:
+                pass

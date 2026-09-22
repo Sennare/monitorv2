@@ -287,7 +287,7 @@ When developing or modifying code for this project, all future contributors (AI 
 
 ### 2. CPU & Thermal Throttling Prevention (Quad-Core Cortex-A53)
 - **No Busy-Waiting:** Never use tight loops like `while not ready: pass`. Always yield execution using `time.sleep()`, `asyncio.sleep()`, or event waiting (`threading.Event.wait(timeout)`).
-- **Event-Driven Awakening:** Look at `display/oled.py` for the preferred pattern: instead of polling every 50ms to see if mood changed, the thread waits on `self._mood_changed_event.wait(timeout=0.5)`. This enables an immediate UI response without wasting CPU cycles.
+- **Event-Driven Awakening:** Look at `display/oled.py` for the preferred pattern: running at a smooth 20 FPS (50ms per frame), the thread waits on `self._wake_event.wait(timeout=sleep_time)`. This enables a fluid 20 FPS framerate with immediate reaction when mood or presence state changes, without busy-waiting or wasting CPU cycles.
 - **I2C Traffic Reduction:** The I2C bus is relatively slow. Do not write full screen buffers to the character LCD if the text has not changed. Always use differential comparison (`if target_text == self._current_lines[row]: continue`) as implemented in `display/lcd.py`.
 - **SPI Baudrate Moderation:** The ILI9341 SPI baudrate is configured up to 64 MHz (`64000000`). On noisy wiring or breadboards, this can lead to corrupted frames or high CPU load. If display artifacts occur, throttle back to 32 MHz or 16 MHz.
 

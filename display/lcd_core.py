@@ -452,3 +452,29 @@ class LCDCore:
                 y_cursor += text_height + 4
 
             self._update_display()
+
+    def close(self) -> None:
+        """Shuts down LCD: stops animations, cancels inactivity timer, turns off backlight."""
+        self.stop_animation()
+        if self._backlight_timer is not None:
+            self._backlight_timer.cancel()
+            self._backlight_timer = None
+        self.is_screen_on = False
+        if self._pwm is not None:
+            try:
+                if hasattr(self._pwm, "duty_cycle"):
+                    self._pwm.duty_cycle = 0
+                elif hasattr(self._pwm, "value"):
+                    self._pwm.value = 0.0
+                if hasattr(self._pwm, "close"):
+                    self._pwm.close()
+                elif hasattr(self._pwm, "deinit"):
+                    self._pwm.deinit()
+            except Exception:
+                pass
+            self._pwm = None
+        elif hasattr(self, "bl_pin") and self.bl_pin is not None:
+            try:
+                self.bl_pin.value = False
+            except Exception:
+                pass

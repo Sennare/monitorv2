@@ -1,3 +1,4 @@
+import math
 from typing import List
 from PIL import Image
 from soul.moods.robot_eyes import (
@@ -6,34 +7,48 @@ from soul.moods.robot_eyes import (
     draw_slit_eye,
     offset_box,
     scale_box,
+    ease_in_out,
+    lerp,
     DEFAULT_LEFT_BOX,
     DEFAULT_RIGHT_BOX,
 )
 
 
 def get_frames() -> List[Image.Image]:
-    """Generate curious robot eyes with asymmetrical cocked wink and head tilt."""
+    """Generate curious robot eyes with smooth asymmetrical cocked wink and head tilt at 20 FPS (40 frames / 2.0s loop)."""
     frames = []
+    total_frames = 40
 
-    for i in range(4):
+    for i in range(total_frames):
         img, draw = new_frame()
 
-        if i == 0:
-            # Frame 0: Resting eyes with slight curiosity height difference
-            draw_squircle_eye(draw, scale_box(DEFAULT_LEFT_BOX, dh=-4))
-            draw_squircle_eye(draw, DEFAULT_RIGHT_BOX)
-        elif i == 1:
-            # Frame 1: Left eye narrows halfway, right eye widens
-            draw_squircle_eye(draw, scale_box(DEFAULT_LEFT_BOX, dh=-14))
-            draw_squircle_eye(draw, offset_box(DEFAULT_RIGHT_BOX, dy=-2))
-        elif i == 2:
-            # Frame 2: Full cocked expression (Left eye is sleek slit, Right eye is wide squircle)
-            draw_slit_eye(draw, DEFAULT_LEFT_BOX, height=6)
-            draw_squircle_eye(draw, offset_box(scale_box(DEFAULT_RIGHT_BOX, dh=2), dy=-3))
+        # Compute curiosity factor (0.0 = resting, 1.0 = full inquisitive cocked expression)
+        if i < 10:
+            # Transition into curiosity (0.5s)
+            c = ease_in_out(i / 10.0)
+        elif i < 28:
+            # Hold curiosity with subtle micro-inquiry bob (0.9s)
+            bob = math.sin((i - 10) / 18.0 * 2 * math.pi) * 0.05
+            c = 1.0 + bob
         else:
-            # Frame 3: Left eye reopening
-            draw_squircle_eye(draw, scale_box(DEFAULT_LEFT_BOX, dh=-10))
-            draw_squircle_eye(draw, DEFAULT_RIGHT_BOX)
+            # Transition back to resting (0.6s)
+            c = ease_in_out((total_frames - i) / 12.0)
+
+        # Right eye raises and expands inquisitively
+        r_dy = -int(round(lerp(0, 3, c)))
+        r_dh = int(round(lerp(0, 3, c)))
+        r_dw = int(round(lerp(0, 2, c)))
+        right_b = offset_box(scale_box(DEFAULT_RIGHT_BOX, dh=r_dh, dw=r_dw), dy=r_dy)
+        draw_squircle_eye(draw, right_b)
+
+        # Left eye squashes down into sleek cybernetic slit
+        if c > 0.75:
+            slit_h = int(round(lerp(8, 6, (c - 0.75) / 0.25)))
+            draw_slit_eye(draw, DEFAULT_LEFT_BOX, height=slit_h)
+        else:
+            l_dh = -int(round(lerp(0, 22, c / 0.75)))
+            left_b = scale_box(DEFAULT_LEFT_BOX, dh=l_dh)
+            draw_squircle_eye(draw, left_b)
 
         frames.append(img)
 
