@@ -1,0 +1,1 @@
+When working on complex Python tasks or modifying modules, always read the ARCHITECTURE.md file in the root directory to respect Raspberry Pi 3 hardware constraints.

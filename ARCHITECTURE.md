@@ -100,9 +100,9 @@ remote-monitor/
 | `main.py` | Initializes all subsystems and coordinates top-level async background tasks. |
 | `state/events.py` | Defines immutable data structures (`AppState`), domain enums (`Mood`, `ActionType`, `EventType`), action wrappers, and the pure reducer function. |
 | `state/store.py` | Holds the singleton `StateStore` and `EventBus`, enforcing unidirectional state mutation and event dispatch. |
-| `soul/emotion_state_manager.py` | Runs the periodic emotional decay loop, evaluates the dominant emotion, and dispatches mood changes. |
-| `soul/emotions/base_emotion.py` | Encapsulates emotion level clamping (0–100), automatic cooldown logic, and non-blocking background workers. |
-| `soul/emotions/*.py` | Implements domain-specific stimuli reactions (e.g. temperature thresholds, knob presses, presence). |
+| `soul/emotion_state_manager.py` | Orchestrates emotion decay, paces spontaneous emotions (~1/min), evaluates active mood (threshold: 50), and dispatches `SetMood`. |
+| `soul/emotions/base_emotion.py` | Encapsulates emotion levels (0–100), peak cooldown trigger at 100, and automatic cooldown recovery when decayed back to 0. |
+| `soul/emotions/*.py` | Implements domain-specific stimuli reactions (e.g. knob presses, presence arrival, temperature alerts). |
 | `soul/moods/*.py` | Generates procedural monochrome PIL image frames representing animated facial expressions for the OLED. |
 | `input/knob_controller2.py` | Translates hardware rotary encoder pin transitions and button presses into typed `Knob` actions. |
 | `input/movement.py` | Interfaces with PIR sensor, managing debounced detection and a 60-second absence timer. |

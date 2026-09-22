@@ -3,14 +3,21 @@ from state import StateStore, EventType, AppState
 
 
 class TooCold:
+    """Discomfort triggered when ambient temperature falls below 16°C."""
+
     def __init__(self):
         self.emotion = BaseEmotion()
+        self.current_temp = 0.0
         self.state_store = StateStore()
         self.state_store.subscribe(EventType.ENVIRONMENT_CHANGED.value, self._on_env_changed)
 
     def _on_env_changed(self, app_state: AppState) -> None:
-        if app_state.temperature < 15:
-            self.emotion.increase_level(4)
+        self.current_temp = app_state.temperature
+
+    def tick(self) -> None:
+        """Called every second by EmotionStateManager."""
+        if 0.0 < self.current_temp < 16.0:
+            self.emotion.increase_level(6)
 
     def get_emotion(self) -> BaseEmotion:
         return self.emotion
