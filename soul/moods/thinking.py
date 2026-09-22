@@ -1,23 +1,40 @@
-from PIL import Image, ImageDraw
 from typing import List
+from PIL import Image
+from soul.moods.robot_eyes import (
+    new_frame,
+    draw_squircle_eye,
+    offset_box,
+    scale_box,
+    DEFAULT_LEFT_BOX,
+    DEFAULT_RIGHT_BOX,
+)
 
 
 def get_frames() -> List[Image.Image]:
+    """Generate thinking robot eyes looking up-right with cycling digital processing blocks."""
     frames = []
+
     for i in range(4):
-        image = Image.new("1", (128, 64))
-        draw = ImageDraw.Draw(image)
-        draw.ellipse((38, 14, 48, 24), fill="white")
-        draw.ellipse((86, 14, 96, 24), fill="white")
-        draw.line((58, 46, 68, 46), fill="white", width=2)
-        # floating dots animate position
-        if i == 0:
-            draw.ellipse((104, 20, 106, 22), fill="white")
-        elif i == 1:
-            draw.ellipse((108, 16, 110, 18), fill="white")
-        elif i == 2:
-            draw.ellipse((110, 12, 114, 16), fill="white")
-        else:
-            draw.ellipse((106, 14, 108, 16), fill="white")
-        frames.append(image)
+        img, draw = new_frame()
+
+        # Eyes shifted up and to the right in contemplation
+        scan_x = 5 + (1 if i in (1, 2) else 0)
+        left_b = offset_box(scale_box(DEFAULT_LEFT_BOX, dh=-2), dx=scan_x, dy=-5)
+        right_b = offset_box(scale_box(DEFAULT_RIGHT_BOX, dh=-2), dx=scan_x, dy=-5)
+
+        draw_squircle_eye(draw, left_b)
+        draw_squircle_eye(draw, right_b)
+
+        # Digital loading/processing indicator dots in top right
+        dot_xs = [104, 112, 120]
+        dot_y = 10
+        for d_idx, x in enumerate(dot_xs):
+            is_active = (d_idx == i) or (i == 3)
+            if is_active:
+                draw.rectangle((x, dot_y, x + 4, dot_y + 4), fill="white")
+            else:
+                draw.rectangle((x, dot_y, x + 4, dot_y + 4), outline="white", width=1)
+
+        frames.append(img)
+
     return frames

@@ -13,7 +13,7 @@ def load_frames(mood_name: str) -> List[Image.Image]:
     except Exception:
         # fallback to neutral
         try:
-            mod = importlib.import_module("moods.neutral")
+            mod = importlib.import_module("soul.moods.neutral")
             return mod.get_frames()
         except Exception:
             # ultimate fallback: one blank frame

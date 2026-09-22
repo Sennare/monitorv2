@@ -1,18 +1,40 @@
-from PIL import Image, ImageDraw
 from typing import List
+from PIL import Image
+from soul.moods.robot_eyes import (
+    new_frame,
+    draw_squircle_eye,
+    draw_slit_eye,
+    offset_box,
+    scale_box,
+    DEFAULT_LEFT_BOX,
+    DEFAULT_RIGHT_BOX,
+)
 
 
 def get_frames() -> List[Image.Image]:
+    """Generate curious robot eyes with asymmetrical cocked wink and head tilt."""
     frames = []
+
     for i in range(4):
-        image = Image.new("1", (128, 64))
-        draw = ImageDraw.Draw(image)
-        draw.ellipse((30, 14, 48, 32), fill="white")
-        # wink every 3rd frame on the small eye
-        if i == 2:
-            draw.line((84, 24, 92, 24), fill="white", width=2)
+        img, draw = new_frame()
+
+        if i == 0:
+            # Frame 0: Resting eyes with slight curiosity height difference
+            draw_squircle_eye(draw, scale_box(DEFAULT_LEFT_BOX, dh=-4))
+            draw_squircle_eye(draw, DEFAULT_RIGHT_BOX)
+        elif i == 1:
+            # Frame 1: Left eye narrows halfway, right eye widens
+            draw_squircle_eye(draw, scale_box(DEFAULT_LEFT_BOX, dh=-14))
+            draw_squircle_eye(draw, offset_box(DEFAULT_RIGHT_BOX, dy=-2))
+        elif i == 2:
+            # Frame 2: Full cocked expression (Left eye is sleek slit, Right eye is wide squircle)
+            draw_slit_eye(draw, DEFAULT_LEFT_BOX, height=6)
+            draw_squircle_eye(draw, offset_box(scale_box(DEFAULT_RIGHT_BOX, dh=2), dy=-3))
         else:
-            draw.ellipse((84, 20, 92, 28), fill="white")
-        draw.ellipse((60, 42, 68, 50), outline="white", width=2)
-        frames.append(image)
+            # Frame 3: Left eye reopening
+            draw_squircle_eye(draw, scale_box(DEFAULT_LEFT_BOX, dh=-10))
+            draw_squircle_eye(draw, DEFAULT_RIGHT_BOX)
+
+        frames.append(img)
+
     return frames

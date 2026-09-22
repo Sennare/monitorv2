@@ -15,7 +15,7 @@
 - **Physical Controls:** Provides user interaction through a rotary encoder with an integrated push button for UI navigation and manual emotional stimulation.
 - **Affective Emotion Engine ("Soul"):** Simulates a living personality using a collection of dynamic emotions (Neutral, Happy, Sad, Angry, Curious, Confused, Thinking, Too Cold, Too Hot, Bored, Looking Around). Emotion levels fluctuate based on sensory stimuli, user interactions, decay over time, and automatic cooldown states.
 - **Dual Display System:**
-  - *OLED Display (SSD1306, 128x64 I2C):* Renders procedural, animated facial expressions reflecting the current mood. Automatically powers down (hides) when no presence is detected.
+  - *OLED Display (SSD1306, 128x64 I2C):* Renders procedural, mouthless robotic eye animations reflecting the current mood using squircle/rounded-rectangle geometry, cybernetic eyebrows, scanning, and emotive transforms. Automatically powers down (hides) when no presence is detected.
   - *Secondary / Main LCDs:* Supports both an HD44780 20x4 character LCD (via PCF8574 I2C backpack with character-diff caching) and a 240x320 ILI9341 color TFT display (via high-speed SPI with PIL rendering and power-saving backlight control).
 - **Hierarchical UI Navigation:** Stateful screen manager toggling between `Home` and `Menu` locations via rotary encoder input, executing non-blocking animations.
 - **Data Persistence:** Automatically logs aggregated environmental readings to a local or network PostgreSQL database at 15-minute intervals.
@@ -50,19 +50,20 @@ remote-monitor/
 │   │   ├── thinking.py         # Thinking model (probabilistic evaluation)
 │   │   ├── too_cold.py         # Discomfort model (triggered when temp < 15°C)
 │   │   └── too_hot.py          # Discomfort model (triggered when temp > 27°C)
-│   └── moods/                  # Procedural frame generators for 128x64 OLED
+│   └── moods/                  # Procedural mouthless robot eye animations for 128x64 OLED
 │       ├── __init__.py         # Dynamic loader (`load_frames`) with fallback
-│       ├── angry.py            # Angry expression frames
-│       ├── bored.py            # Bored expression frames
-│       ├── confused.py         # Confused expression frames
-│       ├── curious.py          # Curious expression frames
-│       ├── happy.py            # Happy expression frames
-│       ├── looking_around.py   # Looking-around expression frames
-│       ├── neutral.py          # Neutral blinking face frames
-│       ├── sad.py              # Sad expression frames
-│       ├── thinking.py         # Thinking expression frames
-│       ├── too_cold.py         # Shivering / cold expression frames
-│       └── too_hot.py          # Sweating / hot expression frames
+│       ├── robot_eyes.py       # Geometric primitives, squircle eye drawers & screen constants
+│       ├── angry.py            # Aggressive eyes with sharp angled eyebrows & tension jitter
+│       ├── bored.py            # Sleepy flat horizontal slit bar eyes (- -)
+│       ├── confused.py         # Concentric spinning spiral / ring eyes (◎ ◎)
+│       ├── curious.py          # Asymmetrical cocked wink with slit & wide squircle (- ■)
+│       ├── happy.py            # Bouncing joyful smiling arcs (⌒ ⌒) and dome eyes
+│       ├── looking_around.py   # Robotic room scanning sweep and quick blink
+│       ├── neutral.py          # Baseline resting squircle eyes with natural blink cycle
+│       ├── sad.py              # Sorrowful squircle eyes with angled eyebrows & tear micro-quiver
+│       ├── thinking.py         # Upward gaze with sequential digital processing indicators
+│       ├── too_cold.py         # Shivering squeezed chevron eyes (> <) with vibration
+│       └── too_hot.py          # Exhausted drooping half-lids with dripping digital sweat drop
 ├── input/                      # Hardware input drivers & polling workers
 │   ├── knob_controller2.py     # Rotary encoder (A/B) and button via gpiozero
 │   ├── movement.py             # PIR motion sensor driver with inactivity watchdog
@@ -106,7 +107,7 @@ remote-monitor/
 | `soul/emotion_state_manager.py` | Orchestrates emotion decay, paces spontaneous emotions (~1/min), evaluates active mood (threshold: 50), responds to `emotion.boost` events, and dispatches `SetMood`. |
 | `soul/emotions/base_emotion.py` | Encapsulates emotion levels (0–100), peak cooldown trigger at 100, and automatic cooldown recovery when decayed back to 0. |
 | `soul/emotions/*.py` | Implements domain-specific stimuli reactions (e.g. knob presses, presence arrival, temperature alerts). |
-| `soul/moods/*.py` | Generates procedural monochrome PIL image frames representing animated facial expressions for the OLED. |
+| `soul/moods/*.py` | Generates procedural monochrome PIL image frames representing animated mouthless robotic eye expressions for the OLED. |
 | `input/knob_controller2.py` | Decodes physical quadrature rotary encoder transitions (`gpiozero.RotaryEncoder`) and button presses into typed `Knob` actions. |
 | `input/movement.py` | Interfaces with PIR sensor, managing debounced detection and a 60-second absence timer. |
 | `input/temp.py` | Reads temperature and relative humidity from the AHTx0 I2C sensor every 5 seconds. |

@@ -1,20 +1,35 @@
-from PIL import Image, ImageDraw
 from typing import List
+from PIL import Image
+from soul.moods.robot_eyes import (
+    new_frame,
+    draw_squircle_eye,
+    offset_box,
+    scale_box,
+    DEFAULT_LEFT_BOX,
+    DEFAULT_RIGHT_BOX,
+)
 
 
 def get_frames() -> List[Image.Image]:
+    """Generate overheating robot eyes with exhausted half-lids and dripping sweat drop."""
     frames = []
-    for i in range(4):
-        image = Image.new("1", (128, 64))
-        draw = ImageDraw.Draw(image)
-        draw.arc((32, 18, 48, 34), start=0, end=180, fill="white", width=2)
-        draw.arc((80, 18, 96, 34), start=0, end=180, fill="white", width=2)
-        draw.ellipse((54, 42, 74, 56), outline="white", width=2)
-        # animate sweat droplet position
-        if i % 2 == 0:
-            draw.ellipse((20, 22, 24, 28), fill="white")
-        else:
-            draw.ellipse((22, 20, 26, 26), fill="white")
-        draw.line([(22, 17), (22, 23)], fill="white", width=1)
-        frames.append(image)
+    sweat_drop_ys = [18, 24, 30, 36]
+
+    for i, s_y in enumerate(sweat_drop_ys):
+        img, draw = new_frame()
+
+        # Drooping exhausted half-lidded eyes
+        left_b = offset_box(scale_box(DEFAULT_LEFT_BOX, dh=-10), dy=4)
+        right_b = offset_box(scale_box(DEFAULT_RIGHT_BOX, dh=-10), dy=4)
+
+        draw_squircle_eye(draw, left_b, radius=5)
+        draw_squircle_eye(draw, right_b, radius=5)
+
+        # Digital sweat drop running down the left temple/screen edge
+        drop_x = 16
+        draw.line([(drop_x, s_y - 4), (drop_x, s_y)], fill="white", width=2)
+        draw.ellipse((drop_x - 2, s_y, drop_x + 2, s_y + 4), fill="white")
+
+        frames.append(img)
+
     return frames

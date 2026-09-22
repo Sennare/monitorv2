@@ -1,16 +1,35 @@
-from PIL import Image, ImageDraw
 from typing import List
+from PIL import Image
+from soul.moods.robot_eyes import (
+    new_frame,
+    draw_dome_eye,
+    draw_arch_eye,
+    offset_box,
+    DEFAULT_LEFT_BOX,
+    DEFAULT_RIGHT_BOX,
+)
 
 
 def get_frames() -> List[Image.Image]:
+    """Generate joyful bouncing robot eyes with smiling arcs and happy domes."""
     frames = []
-    for i in range(4):
-        image = Image.new("1", (128, 64))
-        draw = ImageDraw.Draw(image)
-        # eyes arc: make a tiny mouth wobble on frames
-        draw.arc((32, 18, 48, 34), start=180, end=0, fill="white", width=3)
-        draw.arc((80, 18, 96, 34), start=180, end=0, fill="white", width=3)
-        mouth_offset = -1 if i % 2 == 0 else 1
-        draw.chord((52, 40 + mouth_offset, 76, 56 + mouth_offset), start=0, end=180, fill="white")
-        frames.append(image)
+    bounce_offsets = [0, -3, -4, -1]
+
+    for i, dy in enumerate(bounce_offsets):
+        img, draw = new_frame()
+
+        left_b = offset_box(DEFAULT_LEFT_BOX, dy=dy)
+        right_b = offset_box(DEFAULT_RIGHT_BOX, dy=dy)
+
+        if i % 2 == 0:
+            # Filled cheerful dome eyes (curved top, flat bottom)
+            draw_dome_eye(draw, left_b)
+            draw_dome_eye(draw, right_b)
+        else:
+            # Upward curving smiling arcs
+            draw_arch_eye(draw, left_b, width=5)
+            draw_arch_eye(draw, right_b, width=5)
+
+        frames.append(img)
+
     return frames
