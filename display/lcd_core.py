@@ -60,6 +60,7 @@ class LCDCore:
         width=240,
         height=320,
         timeout_seconds=45.0,
+        pwm_freq=None,
     ):
         if getattr(self, "_initialized", False):
             return
@@ -67,6 +68,15 @@ class LCDCore:
         self.width = width
         self.height = height
         self.timeout_seconds = timeout_seconds
+
+        # Backlight PWM frequency (default 1000 Hz to eliminate flicker)
+        env_freq = os.environ.get("LCD_PWM_FREQ")
+        if pwm_freq is not None:
+            self.pwm_freq = int(pwm_freq)
+        elif env_freq is not None:
+            self.pwm_freq = int(env_freq)
+        else:
+            self.pwm_freq = 1000
 
         # Concurrency & rendering locks
         self._disp_lock = threading.RLock()
@@ -79,18 +89,21 @@ class LCDCore:
         self.is_screen_on = False
         self.on_inactivity_timeout = None
         self.brightness = 100  # Default 100%
+        # Sleep / inactivity dim brightness (5% instead of completely off)
+        env_sleep_bright = os.environ.get("LCD_SLEEP_BRIGHTNESS")
+        self.sleep_brightness = int(env_sleep_bright) if env_sleep_bright is not None else 5
         self._pwm = None
 
         if HARDWARE_AVAILABLE and board is not None:
-            # Pin mapping: RST = GPIO 13 (Pin 33), BL = GPIO 6 (Pin 31)
+            # Pin mapping: RST = GPIO 13 (Pin 33), BL = GPIO 12 (Pin 32, Hardware PWM0)
             # Supports optional environment variable overrides for custom bench wiring
             env_rst = os.environ.get("LCD_RST_PIN")
             env_bl = os.environ.get("LCD_BL_PIN")
             rst_num = int(env_rst) if env_rst else 13
-            bl_num = int(env_bl) if env_bl else 6
+            bl_num = int(env_bl) if env_bl else 12
 
             rst_pin = rst_pin or getattr(board, f"D{rst_num}", board.D13)
-            bl_pin = bl_pin or getattr(board, f"D{bl_num}", board.D6)
+            bl_pin = bl_pin or getattr(board, f"D{bl_num}", getattr(board, "D12", None))
             cs_pin = cs_pin or board.D8
             dc_pin = dc_pin or board.D24
 
@@ -135,28 +148,38 @@ class LCDCore:
 
     def _init_backlight(self, bl_pin):
         """
-        Initializes backlight with software PWM brightness control if available,
+        Initializes backlight with PWM brightness control if available,
         falling back to digital on/off.
         The backlight pin is strictly isolated and never touches the display reset line.
         """
         self._pwm = None
         self.bl_pin = None
+        freq = getattr(self, "pwm_freq", 1000)
 
-        # 1. Try gpiozero software PWM for flexible brightness modulation (10%-100%)
+        # 1. Try CircuitPython pwmio.PWMOut (utilizes native hardware PWM when supported on the pin)
         try:
-            from gpiozero import PWMOutputDevice
-            pin_num = getattr(bl_pin, "id", None)
-            if not isinstance(pin_num, int):
-                digits = "".join([c for c in str(bl_pin) if c.isdigit()])
-                pin_num = int(digits) if digits else 6
-
-            self._pwm = PWMOutputDevice(pin_num, frequency=200, initial_value=1.0)
-            print(f"[lcd_core] Backlight initialized with gpiozero PWM on GPIO {pin_num}.")
-        except Exception as e:
+            import pwmio
+            self._pwm = pwmio.PWMOut(bl_pin, frequency=freq, duty_cycle=65535)
+            print(f"[lcd_core] Backlight initialized with pwmio hardware PWM on pin {bl_pin} at {freq}Hz.")
+        except Exception:
             self._pwm = None
-            print(f"[lcd_core] PWM init not available ({e}), falling back to digital on/off.")
 
-        # 2. Fallback to digital on/off via digitalio
+        # 2. Try gpiozero PWMOutputDevice
+        if self._pwm is None:
+            try:
+                from gpiozero import PWMOutputDevice
+                pin_num = getattr(bl_pin, "id", None)
+                if not isinstance(pin_num, int):
+                    digits = "".join([c for c in str(bl_pin) if c.isdigit()])
+                    pin_num = int(digits) if digits else 12
+
+                self._pwm = PWMOutputDevice(pin_num, frequency=freq, initial_value=1.0)
+                print(f"[lcd_core] Backlight initialized with gpiozero PWM on GPIO {pin_num} at {freq}Hz.")
+            except Exception as e:
+                self._pwm = None
+                print(f"[lcd_core] PWM init not available ({e}), falling back to digital on/off.")
+
+        # 3. Fallback to digital on/off via digitalio
         if self._pwm is None:
             try:
                 self.bl_pin = digitalio.DigitalInOut(bl_pin)
@@ -176,8 +199,8 @@ class LCDCore:
         return self.is_screen_on
 
     def _apply_backlight(self):
-        """Applies current brightness and power state to physical backlight."""
-        target_pct = self.brightness if self.is_screen_on else 0
+        """Applies current brightness and power state to physical backlight (5% when sleeping)."""
+        target_pct = self.brightness if self.is_screen_on else self.sleep_brightness
         if self._pwm is not None:
             try:
                 if hasattr(self._pwm, "duty_cycle"):
@@ -188,7 +211,7 @@ class LCDCore:
                 print(f"[lcd_core] Backlight PWM error: {e}")
         elif hasattr(self, "bl_pin") and self.bl_pin is not None:
             try:
-                self.bl_pin.value = (target_pct > 0)
+                self.bl_pin.value = bool(self.is_screen_on)
             except Exception:
                 pass
 
@@ -199,11 +222,15 @@ class LCDCore:
         return self.brightness
 
     def get_brightness(self) -> int:
-        """Gets current backlight brightness percentage."""
+        """Gets current active backlight brightness percentage."""
         return self.brightness
 
+    def get_effective_brightness(self) -> int:
+        """Gets actual applied backlight level (returns sleep_brightness if sleeping)."""
+        return self.brightness if self.is_screen_on else self.sleep_brightness
+
     def turn_off(self):
-        """Puts the display to sleep: turns off backlight, stops animations, keeps LCD image."""
+        """Puts display to sleep: dims backlight to 5%, stops animations, keeps LCD image."""
         self.stop_animation()
         self.is_screen_on = False
         self._apply_backlight()

@@ -113,7 +113,7 @@ remote-monitor/
 | `input/temp.py` | Reads temperature and relative humidity from the AHTx0 I2C sensor every 5 seconds. |
 | `display/oled.py` | Displays animated expressions on the SSD1306 OLED; handles power states via `device.hide()` / `device.show()`. |
 | `display/lcd.py` | Drives HD44780 20x4 LCD via PCF8574 with smart line-differential updates to minimize I2C bus load. |
-| `display/lcd_core.py` | Provides drawing primitives, PWM backlight brightness control (10%-100%), thread-safe animation cancellation (`_anim_stop_event`, `_disp_lock`), and automated 45-second inactivity backlight sleep management for the ILI9341 SPI color TFT display. |
+| `display/lcd_core.py` | Provides drawing primitives, PWM backlight brightness control (10%-100%), thread-safe animation cancellation (`_anim_stop_event`, `_disp_lock`), and automated 45-second inactivity backlight dimming (5% sleep mode) for the ILI9341 SPI color TFT display. |
 | `display/ui_icons.py` | Procedural vector icon drawing library (Home, Sensors, Settings, Thermometer, Chevrons) replacing missing font emojis. |
 | `display/animations/` | Defines frame sequences for full-color LCD animations using PIL vector drawing. |
 | `navigation/` | Stateful screen manager (`Welcome`, `Home`, `Menu`, `Settings`, `Sensors`) routing encoder rotations/presses and triggering navigation-linked emotions. |
@@ -233,7 +233,7 @@ The application interfaces directly with Raspberry Pi 3 physical header pins via
 | **TFT LCD Chip Select (CS)** | Direct GPIO | Pin 24 | GPIO 8 (`board.D8`) | Active Low SPI Chip Select |
 | **TFT LCD Data/Command (DC)** | Direct GPIO | Pin 18 | GPIO 24 (`board.D24`)| Data / Command mode selector |
 | **TFT LCD Reset (RST)** | Direct GPIO | Pin 33 | GPIO 13 (`board.D13`)| Active Low Hardware Reset (configurable via `LCD_RST_PIN`) |
-| **TFT LCD Backlight (BL/LED)** | Software PWM / GPIO | Pin 31 | GPIO 6 (`board.D6`)| PWM brightness control (10%-100%) & sleep timer (configurable via `LCD_BL_PIN`) |
+| **TFT LCD Backlight (BL/LED)** | Hardware PWM0 / GPIO | Pin 32 (Pin 31 legacy) | GPIO 12 (`board.D12`, PWM0)| PWM brightness control (10%-100%), 1% dimming during 45s inactivity sleep (configurable via `LCD_BL_PIN`, `LCD_PWM_FREQ`, `LCD_SLEEP_BRIGHTNESS`) |
 | **PIR Motion Sensor** | Direct GPIO | Pin 29 | GPIO 5 | Active High, `pull_up=False`, `bounce_time=0.1s` |
 | **Rotary Encoder Button** | Direct GPIO | Pin 11 | GPIO 17 | Active Low, internal pull-up, `bounce_time=0.05s` |
 | **Rotary Encoder Left (A)** | Direct GPIO | Pin 13 | GPIO 27 | Active Low, internal pull-up, quadrature channel A |

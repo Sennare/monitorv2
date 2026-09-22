@@ -148,7 +148,7 @@ class Navigation:
         """
         Handles 45-second inactivity timeout:
         Falls back to Home page (or resets time-travel if already on Home),
-        renders the fresh Home page to the LCD buffer, and turns off the backlight
+        renders the fresh Home page to the LCD buffer, and dims the backlight to 5%
         while keeping the LCD controller on.
         """
         with self._lock:
@@ -168,7 +168,7 @@ class Navigation:
             # 2. Render fresh Home view to the LCD display buffer
             self.render()
 
-            # 3. Turn off backlight while keeping LCD on
+            # 3. Dim backlight to 5% while keeping LCD on
             self.lcd.turn_off()
 
     def _auto_refresh_loop(self) -> None:
