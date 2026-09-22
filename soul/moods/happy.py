@@ -23,29 +23,31 @@ def get_frames() -> List[Image.Image]:
         # Smooth vertical bounce arc peaking at -6 pixels
         dy = -int(round(6.0 * math.sin(t * math.pi)))
 
-        # Squeezed smiling squircle eye base height with bounce squash & stretch
+        # Squeezed smiling squircle eye with bounce squash & stretch
+        # Both outer top border and inner lower border maintain rounded-square (squircle) shape
         if dy >= -1:
-            # Landing impact: deeper cheek squeeze
-            dh = -16
-            dw = 2
-            squeeze = 0.68
+            # Landing impact: compressed squash
+            dh, dw = -18, 2
+            top_th, leg_th = 4, 5
         elif dy <= -4:
-            # Apex of bounce: buoyant float squeeze
-            dh = -12
-            dw = 1
-            squeeze = 0.55
+            # Apex of bounce: buoyant float
+            dh, dw = -14, 1
+            top_th, leg_th = 6, 5
         else:
             # Airborne rise/fall
-            dh = -14
-            dw = 0
-            squeeze = 0.60
+            dh, dw = -16, 0
+            top_th, leg_th = 5, 5
 
         left_b = scale_box(offset_box(DEFAULT_LEFT_BOX, dy=dy), dh=dh, dw=dw)
         right_b = scale_box(offset_box(DEFAULT_RIGHT_BOX, dy=dy), dh=dh, dw=dw)
 
-        # Draw squeezed squircle eyes
-        draw_squeezed_squircle_eye(draw, left_b, radius=5, squeeze_amount=squeeze)
-        draw_squeezed_squircle_eye(draw, right_b, radius=5, squeeze_amount=squeeze)
+        # Draw squeezed squircle eyes with rounded-square top and inner bottom borders
+        draw_squeezed_squircle_eye(
+            draw, left_b, radius=5, inner_radius=3, top_thickness=top_th, leg_thickness=leg_th
+        )
+        draw_squeezed_squircle_eye(
+            draw, right_b, radius=5, inner_radius=3, top_thickness=top_th, leg_thickness=leg_th
+        )
 
         frames.append(img)
 

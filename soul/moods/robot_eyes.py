@@ -74,21 +74,26 @@ def draw_squeezed_squircle_eye(
     draw: ImageDraw.ImageDraw,
     box: Tuple[int, int, int, int],
     radius: int = 5,
-    squeeze_amount: float = 0.6,
+    inner_radius: int = 3,
+    top_thickness: int = 5,
+    leg_thickness: int = 5,
     fill: str = "white",
 ) -> None:
     """
     Draw a happy/smiling squeezed squircle eye.
-    Maintains the rounded-rectangle squircle top and sides, while carving an upward
-    smiling arch from the bottom (cheek squeeze).
+    Both the top outer border and the inner lower cutout border follow a rounded-square
+    (squircle) geometry with flat edges and rounded corners.
     """
     x0, y0, x1, y1 = box
+    # Outer rounded square (squircle)
     draw.rounded_rectangle(box, radius=radius, fill=fill)
-    if squeeze_amount > 0.05:
-        h = y1 - y0
-        cut_y0 = y0 + int(h * (1.0 - squeeze_amount))
-        cut_y1 = y1 + int(h * 0.75)
-        draw.ellipse((x0 + 3, cut_y0, x1 - 3, cut_y1), fill=0)
+
+    # Inner rounded square cutout from the bottom
+    cut_x0 = x0 + leg_thickness
+    cut_x1 = x1 - leg_thickness
+    cut_y0 = y0 + top_thickness
+    cut_y1 = y1 + 10  # extends below bottom to keep legs open
+    draw.rounded_rectangle((cut_x0, cut_y0, cut_x1, cut_y1), radius=inner_radius, fill=0)
 
 
 def draw_slit_eye(
