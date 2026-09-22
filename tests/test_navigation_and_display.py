@@ -323,12 +323,18 @@ class TestLCDCoreAndNavigation(unittest.TestCase):
         self.assertEqual(self.lcd.get_brightness(), 75, "Active brightness target preserved")
 
     def test_knob_rotation_triggers_happy_emotion(self):
-        """Verify rotating knob immediately excites Happy emotion and updates mood."""
+        """Verify rotating knob gently increases Happy (+5%) without forcing happy face until reaching 50."""
         emotion_manager = EmotionStateManager()
         self.assertEqual(self.store.state.mood, Mood.NEUTRAL)
 
-        # Rotate knob
+        # Single rotation: increases Happy by 5.0%, mood remains Neutral (threshold 50 not met)
         self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))
+        self.assertEqual(emotion_manager.emotion_instances[Mood.HAPPY].get_emotion().level, 5.0)
+        self.assertEqual(self.store.state.mood, Mood.NEUTRAL)
+
+        # Multiple rotations: accumulates to 50% and activates Happy mood naturally
+        for _ in range(9):
+            self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))
 
         self.assertEqual(self.store.state.mood, Mood.HAPPY)
         self.assertGreaterEqual(emotion_manager.emotion_instances[Mood.HAPPY].get_emotion().level, 50)
@@ -340,8 +346,9 @@ class TestLCDCoreAndNavigation(unittest.TestCase):
         nav = Navigation(start_with_welcome=False)
         self.navs.append(nav)
 
-        # Rotate knob -> triggers Happy
-        self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))
+        # Rotate knob 10 times -> triggers Happy naturally
+        for _ in range(10):
+            self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))
         self.assertEqual(self.store.state.mood, Mood.HAPPY)
 
         # Navigate to Settings -> must trigger Angry, overriding Happy
@@ -355,10 +362,11 @@ class TestLCDCoreAndNavigation(unittest.TestCase):
         emotion_manager.close()
 
     def test_navigation_menu_and_emotions_flow(self):
-        """Verify Home -> Menu -> Emotions -> Menu navigation flow via knob."""
+        """Verify Home -> Menu -> Emotions (5m timeout, knob rotate stays, press exits) -> Menu flow."""
         nav = Navigation(start_with_welcome=False)
         self.navs.append(nav)
         self.assertEqual(nav.current_location_id, Location.HOME.value)
+        self.assertEqual(nav.lcd.timeout_seconds, 45.0)
 
         # Press knob to enter Menu
         self.store.dispatch(Knob(KnobUserAction.PRESS))
@@ -375,10 +383,19 @@ class TestLCDCoreAndNavigation(unittest.TestCase):
         # Press knob to enter Emotions view
         self.store.dispatch(Knob(KnobUserAction.PRESS))
         self.assertEqual(nav.current_location_id, Location.EMOTIONS.value)
+        # Inactivity timeout must be 5 minutes (300 seconds) on EmotionsPage
+        self.assertEqual(nav.lcd.timeout_seconds, 300.0)
 
-        # Pressing knob inside Emotions returns back to Menu
+        # Rotating knob inside Emotions must NOT exit to Menu
+        self.store.dispatch(Knob(KnobUserAction.TURN_LEFT))
+        self.assertEqual(nav.current_location_id, Location.EMOTIONS.value)
+        self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))
+        self.assertEqual(nav.current_location_id, Location.EMOTIONS.value)
+
+        # Only pressing knob inside Emotions returns back to Menu
         self.store.dispatch(Knob(KnobUserAction.PRESS))
         self.assertEqual(nav.current_location_id, Location.MENU.value)
+        self.assertEqual(nav.lcd.timeout_seconds, 45.0)
 
     def test_emotions_page_render_all_bars_and_active_highlight(self):
         """Verify EmotionsPage renders all 11 emotions with bars and active highlight without crashing."""

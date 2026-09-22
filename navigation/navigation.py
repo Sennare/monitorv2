@@ -22,11 +22,15 @@ class Location(str, Enum):
     EMOTIONS = "EMOTIONS"
 
 
+DEFAULT_INACTIVITY_TIMEOUT = 45.0
+EMOTIONS_INACTIVITY_TIMEOUT = 300.0  # 5 minutes for EmotionsPage
+
+
 class Navigation:
     """
     Central UI Navigator & Page Manager.
     Coordinates active page rendering on LCDCore, routes rotary encoder events,
-    and manages the 45-second inactivity display sleep/wake lifecycle.
+    and manages the inactivity display sleep/wake lifecycle (45s default, 5m on Emotions).
     """
 
     def __init__(self, start_with_welcome: bool = True):
@@ -52,6 +56,9 @@ class Navigation:
         self.current_page: AbstractLocation = self.pages[initial_loc]
 
         # Register inactivity timeout handler with LCDCore
+        self.lcd.timeout_seconds = (
+            EMOTIONS_INACTIVITY_TIMEOUT if initial_loc == Location.EMOTIONS.value else DEFAULT_INACTIVITY_TIMEOUT
+        )
         self.lcd.on_inactivity_timeout = self._on_inactivity_timeout
 
         # Auto-refresh loop for Home page (every 30s) and Emotions page (every 1s)
@@ -114,6 +121,11 @@ class Navigation:
             self.current_location_id = target_key
             self.current_page = self.pages[target_key]
 
+            # Adjust inactivity timeout (5 mins for emotions page, 45s for others)
+            timeout = EMOTIONS_INACTIVITY_TIMEOUT if target_key == Location.EMOTIONS.value else DEFAULT_INACTIVITY_TIMEOUT
+            self.lcd.timeout_seconds = timeout
+            self.lcd.reset_inactivity_timer()
+
             # 3. Enter new page
             self.current_page.on_enter()
 
@@ -139,7 +151,7 @@ class Navigation:
                 self.render()
                 return
 
-            # Display is awake: reset the 45s timer on every interaction
+            # Display is awake: reset timer on every interaction
             self.lcd.reset_inactivity_timer()
 
             # Pass interaction to the active page
@@ -153,7 +165,7 @@ class Navigation:
 
     def _on_inactivity_timeout(self) -> None:
         """
-        Handles 45-second inactivity timeout:
+        Handles inactivity timeout:
         Falls back to Home page (or resets time-travel if already on Home),
         renders the fresh Home page to the LCD buffer, and dims the backlight to 5%
         while keeping the LCD controller on.
@@ -161,11 +173,12 @@ class Navigation:
         with self._lock:
             # 1. Fall back to Home if in another location
             if self.current_location_id != Location.HOME.value:
-                print(f"[nav] Inactivity timeout (45s): falling back from {self.current_location_id} to HOME")
+                print(f"[nav] Inactivity timeout: falling back from {self.current_location_id} to HOME")
                 self.current_page.on_exit()
                 self.lcd.stop_animation()
                 self.current_location_id = Location.HOME.value
                 self.current_page = self.pages[Location.HOME.value]
+                self.lcd.timeout_seconds = DEFAULT_INACTIVITY_TIMEOUT
                 self.current_page.on_enter()
             else:
                 # If already on Home, reset graph history / time-travel

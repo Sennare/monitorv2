@@ -17,13 +17,22 @@ class LookingAround:
         self.someone_around = app_state.someone_around
         if self.someone_around and not self.someone_around_lately:
             self.someone_around_lately = True
-            # Max excitation only upon initial arrival
-            self.emotion.increase_level(100)
+            # Strong awareness surge upon arrival
+            self.emotion.increase_level(80)
         elif not self.someone_around:
             self.someone_around_lately = False
 
     def tick(self) -> None:
-        pass
+        """Called every second by EmotionStateManager."""
+        if self.someone_around:
+            import random
+            if random.random() < 0.04:
+                # Periodic quick glance / scan around the room
+                self.emotion.increase_level(20)
+            else:
+                self.emotion.decrease_level(0.8)
+        else:
+            self.emotion.decrease_level(1.2)
 
     def get_emotion(self) -> BaseEmotion:
         return self.emotion

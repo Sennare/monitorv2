@@ -158,7 +158,7 @@ class EmotionsPage(AbstractLocation):
         lcd.render_image(img)
 
     def handle_knob(self, action: KnobUserAction) -> Optional[str]:
-        """Pressing or rotating the knob returns back to Menu."""
-        if action in (KnobUserAction.PRESS, KnobUserAction.TURN_LEFT, KnobUserAction.TURN_RIGHT):
+        """Only pressing the knob returns back to Menu; turning knob remains on page."""
+        if action == KnobUserAction.PRESS:
             return "MENU"
         return None

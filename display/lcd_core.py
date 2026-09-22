@@ -255,12 +255,13 @@ class LCDCore:
                 print(f"[lcd_core] Error in on_inactivity_timeout callback: {e}")
         self.turn_off()
 
-    def reset_inactivity_timer(self):
-        """Resets the 45-second inactivity timer."""
+    def reset_inactivity_timer(self, timeout: float | None = None):
+        """Resets the inactivity timer using specified timeout or default timeout_seconds."""
         if self._backlight_timer is not None:
             self._backlight_timer.cancel()
 
-        self._backlight_timer = threading.Timer(self.timeout_seconds, self._on_inactivity_timeout_fired)
+        duration = timeout if timeout is not None else self.timeout_seconds
+        self._backlight_timer = threading.Timer(duration, self._on_inactivity_timeout_fired)
         self._backlight_timer.daemon = True
         self._backlight_timer.start()
 

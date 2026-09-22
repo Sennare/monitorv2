@@ -51,7 +51,7 @@ class EmotionStateManager:
 
     def get_emotion_levels(self) -> dict[Mood, int]:
         return {
-            mood: inst.get_emotion().level
+            mood: int(round(inst.get_emotion().level))
             for mood, inst in self.emotion_instances.items()
         }
 
@@ -69,16 +69,15 @@ class EmotionStateManager:
                 pass
 
     def _on_knob_interacted(self, payload) -> None:
-        """Physical knob rotation or press stimulates Happy emotion immediately."""
+        """Physical knob rotation or press increases Happy emotion gently (+5% per interaction) without forcing mood."""
         # When expressing an explicit negative/alert emotion (like Angry in Settings), do not override with Happy
         if self.mood == Mood.ANGRY:
             return
         inst = self.emotion_instances.get(Mood.HAPPY)
         if inst:
             emotion_obj = inst.get_emotion()
-            emotion_obj.on_cooldown = False
-            emotion_obj.increase_level(60)
-            self.check_and_update_mood(preferred_mood=Mood.HAPPY)
+            emotion_obj.increase_level(5.0)
+            self.check_and_update_mood()
             self.state_store.dispatch(SetEmotionLevels(self.get_emotion_levels()))
 
     def _on_boost_emotion(self, payload) -> None:
@@ -107,14 +106,14 @@ class EmotionStateManager:
             while True:
                 await asyncio.sleep(1.0)
 
-                # 1. Apply decay tick (handles normal decay and cooldown recovery to 0)
+                # 1. Apply decay tick (handles cooldown recovery to 0 and natural decay)
                 for inst in self.emotion_instances.values():
                     try:
                         inst.get_emotion().decay_tick()
                     except Exception as e:
                         print(f"[emotion] Error during decay: {e}")
 
-                # 2. Trigger any continuous hardware-reactive ticks (e.g. ambient temperature)
+                # 2. Trigger continuous dynamic ticks (temperature, random walks, presence, contemplation)
                 for inst in self.emotion_instances.values():
                     if hasattr(inst, "tick"):
                         try:
@@ -122,10 +121,19 @@ class EmotionStateManager:
                         except Exception as e:
                             print(f"[emotion] Error during tick: {e}")
 
-                # 3. Evaluate and update dominant mood
+                # 3. Dynamically calibrate Neutral composure level (inverse of peak excitement)
+                non_neutral_peak = max(
+                    (inst.get_emotion().level for m, inst in self.emotion_instances.items() if m != Mood.NEUTRAL),
+                    default=0.0
+                )
+                neutral_inst = self.emotion_instances.get(Mood.NEUTRAL)
+                if neutral_inst:
+                    neutral_inst.get_emotion().level = max(0.0, 100.0 - non_neutral_peak)
+
+                # 4. Evaluate and update dominant mood
                 self.check_and_update_mood()
 
-                # 4. Handle spontaneous emotion pacing (~1 emotion per minute)
+                # 5. Handle spontaneous emotion pacing (~1 emotion per minute)
                 if self.mood == Mood.NEUTRAL:
                     self._idle_seconds += 1
 
@@ -139,7 +147,7 @@ class EmotionStateManager:
                 else:
                     self._idle_seconds = 0
 
-                # 5. Dispatch updated emotion levels to central state
+                # 6. Dispatch updated emotion levels to central state
                 self.state_store.dispatch(SetEmotionLevels(self.get_emotion_levels()))
 
                 if self.debug_mode:
@@ -148,7 +156,7 @@ class EmotionStateManager:
             pass
 
     def _trigger_spontaneous_emotion(self) -> None:
-        """Picks and triggers a spontaneous emotion roughly once per minute."""
+        """Picks and triggers a spontaneous emotion roughly once per minute with organic rise."""
         someone_around = self.state_store.state.someone_around
 
         if someone_around:
@@ -174,8 +182,9 @@ class EmotionStateManager:
 
         inst = self.emotion_instances.get(chosen_mood)
         if inst and not inst.get_emotion().on_cooldown:
-            print(f"[emotion] Spontaneous activation (~1/min): {chosen_mood.value} (someone_around={someone_around})")
-            inst.get_emotion().increase_level(100)
+            boost_amount = random.uniform(35.0, 50.0)
+            print(f"[emotion] Spontaneous activation (~1/min): {chosen_mood.value} +{boost_amount:.1f} (someone_around={someone_around})")
+            inst.get_emotion().increase_level(boost_amount)
 
     def check_and_update_mood(self, preferred_mood: Mood | None = None):
         # Filter non-neutral emotions to find highest stimulus
@@ -212,11 +221,12 @@ class EmotionStateManager:
         max_len = max(len(m.value) for m in self.emotion_instances) + 1
         
         for mood, inst in self.emotion_instances.items():
-            level = inst.get_emotion().level  # Valore da 0 a 100
+            level = float(inst.get_emotion().level)  # Valore da 0 a 100
+            int_level = max(0, min(100, int(round(level))))
             
             # Calcoliamo quanti blocchi da 10 sono completamente pieni
-            full_blocks = level // 10
-            remainder = level % 10
+            full_blocks = int_level // 10
+            remainder = int_level % 10
             
             # Scegliamo il carattere per il valore intermedio in base al resto
             if remainder >= 7:
@@ -236,4 +246,4 @@ class EmotionStateManager:
             
             cooling_down = "*" if inst.get_emotion().on_cooldown else " "
             label = f"{mood.value}{cooling_down}"
-            print(f"  {label:<{max_len}} : [{bar}] {level}/100")
+            print(f"  {label:<{max_len}} : [{bar}] {level:5.1f}/100")
