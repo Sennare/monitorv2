@@ -40,7 +40,7 @@ class LCDCore:
             cs=digitalio.DigitalInOut(cs_pin),
             dc=digitalio.DigitalInOut(dc_pin),
             rst=digitalio.DigitalInOut(rst_pin),
-            baudrate=32000000,
+            baudrate=64000000,
         )
 
         self.image = Image.new("RGB", (self.width, self.height))
@@ -104,30 +104,52 @@ class LCDCore:
     # High-Level API Methods
     # ==========================================
 
+    def _play_animation_frames(self, frames, frame_delay, cycles):
+        """Worker interno: esegue il loop dell'animazione senza bloccare il caller."""
+        try:
+            for _ in range(cycles):
+                for frame in frames:
+                    self.image.paste(frame)
+                    self._update_display()
+                    if frame_delay > 0:
+                        time.sleep(frame_delay)
+        finally:
+            self._trigger_activity()
+
     def play_animation(self, animation, frame_delay=0.3, cycles=3):
         """
         Riproduce un'animazione sullo schermo.
         Mantiene acceso il backlight e fa partire il timeout solo alla fine.
+        L'animazione viene eseguita in un thread separato per evitare di bloccare
+        il flusso principale dell'applicazione mentre avanza il frame.
         """
         # Accendiamo il display senza far partire il timer di timeout
         self.bl_pin.value = True
         if self._backlight_timer is not None:
             self._backlight_timer.cancel()
-            
-        frames = animation.get_frames()
-        
+
+        frames = animation.get_frames() if animation is not None else []
         if not frames:
             return
 
-        # Renderizziamo l'animazione
-        for _ in range(cycles):
-            for frame in frames:
-                self.image.paste(frame)
-                self._update_display()
-                time.sleep(frame_delay)
-                
-        # Alla fine dell'animazione, attiviamo il timer per lo spegnimento
-        self._trigger_activity()
+        try:
+            cycles = int(cycles)
+        except (TypeError, ValueError):
+            cycles = 1
+        cycles = max(1, cycles)
+
+        try:
+            frame_delay = float(frame_delay)
+        except (TypeError, ValueError):
+            frame_delay = 0.3
+        frame_delay = max(0.0, frame_delay)
+
+        animation_thread = threading.Thread(
+            target=self._play_animation_frames,
+            args=(frames, frame_delay, cycles),
+            daemon=True,
+        )
+        animation_thread.start()
 
     def set_background_color(self, color):
         """Fills the entire screen with the specified color."""
