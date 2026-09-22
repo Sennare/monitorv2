@@ -1,5 +1,5 @@
 import random
-from state import Mood, SetMood, StateStore
+from state import Mood, SetMood, StateStore, EventType
 import asyncio
 
 from .emotions.looking_around import LookingAround
@@ -40,8 +40,24 @@ class EmotionStateManager:
             Mood.LOOKING_AROUND: LookingAround(),
         }
 
+        # Subscribe to emotion boost events (from navigation / user actions)
+        self.state_store.subscribe(EventType.EMOTION_BOOST.value, self._on_boost_emotion)
+
         # Tracks consecutive seconds spent in Idle state
         self._idle_seconds = 0
+
+    def _on_boost_emotion(self, payload) -> None:
+        """Handle explicit emotion boost requests from navigation or interactions."""
+        if not payload:
+            return
+        mood, amount = payload
+        inst = self.emotion_instances.get(mood)
+        if inst:
+            emotion_obj = inst.get_emotion()
+            emotion_obj.on_cooldown = False
+            emotion_obj.increase_level(amount)
+            print(f"[emotion] Boosted emotion {mood.value} by {amount} (new level: {emotion_obj.level})")
+            self.check_and_update_mood()
 
     async def startWorker(self):
         while True:

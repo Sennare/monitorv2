@@ -77,11 +77,15 @@ remote-monitor/
 │       └── welcome.py          # Dynamic bouncy greeting animation
 ├── navigation/                 # Screen navigation and UI flow
 │   ├── __init__.py             # Navigation package initializer
-│   ├── abstract_location.py    # Location abstract base class (`render()`)
-│   ├── navigation.py           # Navigation manager subscribed to knob inputs
+│   ├── abstract_location.py    # Location abstract base class (`render()`, `handle_knob()`)
+│   ├── navigation.py           # Navigation manager subscribed to knob inputs & 45s inactivity
 │   └── locations/              # Concrete UI screens
-│       ├── home.py             # Home screen location
-│       └── menu.py             # Settings/selection menu location
+│       ├── welcome_page.py     # Startup welcome animation & auto-transition
+│       ├── home.py             # Home telemetry dashboard screen
+│       ├── menu.py             # Interactive vertical selection menu
+│       ├── settings.py         # System settings (triggers ANGRY emotion on soul)
+│       ├── sensors_page.py     # Detailed environmental telemetry (triggers CURIOUS)
+│       └── cat_page.py         # Looping cat mascot animation screen
 ├── database/                   # Persistence layer
 │   ├── database.py             # PostgreSQL client (psycopg2) for insert/query
 │   └── librian.py              # Telemetry buffering and 15-minute persistence worker
@@ -98,9 +102,9 @@ remote-monitor/
 | Module / File | Single Responsibility |
 |---|---|
 | `main.py` | Initializes all subsystems and coordinates top-level async background tasks. |
-| `state/events.py` | Defines immutable data structures (`AppState`), domain enums (`Mood`, `ActionType`, `EventType`), action wrappers, and the pure reducer function. |
+| `state/events.py` | Defines immutable data structures (`AppState`), domain enums (`Mood`, `ActionType`, `EventType`, `KnobUserAction`), action wrappers (`BoostEmotion`, `Knob`), and the pure reducer function. |
 | `state/store.py` | Holds the singleton `StateStore` and `EventBus`, enforcing unidirectional state mutation and event dispatch. |
-| `soul/emotion_state_manager.py` | Orchestrates emotion decay, paces spontaneous emotions (~1/min), evaluates active mood (threshold: 50), and dispatches `SetMood`. |
+| `soul/emotion_state_manager.py` | Orchestrates emotion decay, paces spontaneous emotions (~1/min), evaluates active mood (threshold: 50), responds to `emotion.boost` events, and dispatches `SetMood`. |
 | `soul/emotions/base_emotion.py` | Encapsulates emotion levels (0–100), peak cooldown trigger at 100, and automatic cooldown recovery when decayed back to 0. |
 | `soul/emotions/*.py` | Implements domain-specific stimuli reactions (e.g. knob presses, presence arrival, temperature alerts). |
 | `soul/moods/*.py` | Generates procedural monochrome PIL image frames representing animated facial expressions for the OLED. |
@@ -109,9 +113,9 @@ remote-monitor/
 | `input/temp.py` | Reads temperature and relative humidity from the AHTx0 I2C sensor every 5 seconds. |
 | `display/oled.py` | Displays animated expressions on the SSD1306 OLED; handles power states via `device.hide()` / `device.show()`. |
 | `display/lcd.py` | Drives HD44780 20x4 LCD via PCF8574 with smart line-differential updates to minimize I2C bus load. |
-| `display/lcd_core.py` | Provides drawing primitives, text formatting, and animation support for the ILI9341 SPI color TFT display. |
+| `display/lcd_core.py` | Provides drawing primitives, thread-safe animation cancellation (`_anim_stop_event`, `_disp_lock`), and automated 45-second inactivity backlight power management for the ILI9341 SPI color TFT display. |
 | `display/animations/` | Defines frame sequences for full-color LCD animations using PIL vector drawing. |
-| `navigation/` | Tracks current UI view (`Home`, `Menu`) and routes encoder button events to switch screens. |
+| `navigation/` | Stateful screen manager (`Welcome`, `Home`, `Menu`, `Settings`, `Sensors`, `Cat`) routing encoder rotations/presses and triggering navigation-linked emotions. |
 | `database/database.py` | Executes SQL queries and transactional inserts using `psycopg2`. |
 | `database/librian.py` | Listens to environmental telemetry and executes scheduled database commits every 15 minutes. |
 | `dashboard/main.py` | Exposes REST endpoints (`/api/data`) with slot-aggregated sensor metrics and serves web assets. |
@@ -183,19 +187,20 @@ flowchart TD
 1. **Sensory & Input Triggers:**
    Hardware events fire synchronously from interrupts or periodic polling threads (e.g., `when_pressed` on GPIO or `_measure_loop` on I2C).
 2. **Action Dispatch:**
-   Drivers construct strongly typed `Action` objects (`SetMood`, `Knob`, `SetSomeoneAround`, `SetTemAndHumi`) and submit them to `StateStore.dispatch(action)`.
+   Drivers and navigation construct strongly typed `Action` objects (`SetMood`, `Knob`, `SetSomeoneAround`, `SetTemAndHumi`, `BoostEmotion`) and submit them to `StateStore.dispatch(action)`.
 3. **Pure State Reduction:**
    The `reduce_state(state, action)` function calculates a new frozen `AppState` instance without mutating the previous state.
 4. **Event Bus Broadcast:**
    `StateStore` emits specific events via `EventBus`:
    - `state.updated`: Emitted on every state change with `{previous, current, action}`.
    - `mood.changed`: Emitted when the mood changes.
-   - `knob`: Emitted on rotary knob interactions.
+   - `knob`: Emitted on rotary knob interactions (with typed `KnobUserAction`: `press`, `turn_left`, `turn_right`).
+   - `emotion.boost`: Emitted when an emotion is explicitly boosted (e.g. `(Mood.ANGRY, 100)` when entering Settings).
    - `environment.changed`: Emitted when temperature, humidity, or presence changes.
 5. **Subsystem Reaction:**
    - **OLED Controller:** On `mood.changed`, updates its target mood and awakens its animation thread immediately via `threading.Event.set()`. On `environment.changed`, calls `device.show()` or `device.hide()` depending on presence.
-   - **Emotion Engine:** Specific emotion classes (`Happy`, `TooHot`, `TooCold`, `LookingAround`) increment their internal levels upon receiving relevant bus events.
-   - **Navigation:** Listens to `knob` events to toggle between `Home` and `Menu` locations, updating the display via `LCDCore`.
+   - **Emotion Engine:** Specific emotion classes increment internal levels upon receiving relevant bus events, and `EmotionStateManager` handles `emotion.boost` to immediately elevate target emotions (e.g., Angry on Settings navigation).
+   - **Navigation:** Manages active LCD pages (`Welcome`, `Home`, `Menu`, `Settings`, `Sensors`, `Cat Mascot`). Handles display sleep/wake: turns off display after 45s of inactivity, wakes up on knob interaction, and updates views.
    - **Librian:** Caches the latest valid telemetry and writes it to PostgreSQL every 15 minutes.
 
 ### Concurrency Architecture
@@ -205,7 +210,7 @@ To maintain high responsiveness on the single-board computer, the codebase blend
   - `Temp._measure_loop`: Background I2C sensor polling.
   - `OledDisplay._animation_loop`: High-priority OLED frame rendering loop.
   - `Lcd._render_loop` & `_backlight_watchdog`: I2C character LCD differential buffer painter and backlight sleep timer.
-  - `LCDCore._play_animation_frames`: Dedicated thread for SPI LCD animations.
+  - `LCDCore._play_animation_frames`: Dedicated thread for SPI LCD animations, with non-blocking cooperative cancellation via `_anim_stop_event` and `_disp_lock` (`threading.RLock`) to completely eliminate race conditions and frame collisions during transitions.
   - `Librian._persist_runner`: 15-minute background database commit loop.
   - `BaseEmotion._core_loop`: Emotion cooldown calculation loop using non-blocking mutexes (`_task_lock.acquire(blocking=False)`).
 
@@ -292,7 +297,7 @@ When developing or modifying code for this project, all future contributors (AI 
 ### 4. Display Life & Power Conservation
 - **Burn-in & Power Protection:** Both OLED (organic LEDs) and LCD backlights degrade over time if left on continuously:
   - The OLED display must automatically sleep via `self.device.hide()` when `AppState.someone_around` is `False`.
-  - The LCD backlight must automatically shut down after inactivity (`timeout_seconds=10.0`) and only wake up upon user activity or screen transitions.
+  - The LCD display is powered off by default; upon physical user interaction (rotary encoder turn or press), the display turns on (backlight active) and automatically shuts down after 45 seconds of inactivity (`timeout_seconds=45.0`). Waking the display preserves current active page state.
 
 ### 5. Architectural Cleanliness & State Discipline
 - **Single Source of Truth:** All application state resides exclusively inside `StateStore`. Subsystems must never maintain private authoritative state copies.

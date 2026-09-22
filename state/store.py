@@ -68,7 +68,9 @@ class StateStore:
         if action.type == ActionType.SET_MOOD:
             self.bus.publish(EventType.MOOD_CHANGED.value, self._state.mood)
         if action.type == ActionType.KNOB:
-            self.bus.publish(EventType.KNOB.value, None)
+            self.bus.publish(EventType.KNOB.value, action.payload)
+        if action.type == ActionType.BOOST_EMOTION:
+            self.bus.publish(EventType.EMOTION_BOOST.value, action.payload)
         if action.type == ActionType.SET_ENVIRONMENT:
             self.bus.publish(EventType.ENVIRONMENT_CHANGED.value, self._state)
         if action.type == ActionType.SET_TEMP_HUMI:

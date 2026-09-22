@@ -27,6 +27,7 @@ class ActionType(str, Enum):
     KNOB = "Knob"
     SET_ENVIRONMENT = "SetEnvironment"
     SET_TEMP_HUMI = "SetTempHumi"
+    BOOST_EMOTION = "BoostEmotion"
 
 
 class EventType(str, Enum):
@@ -34,6 +35,7 @@ class EventType(str, Enum):
     MOOD_CHANGED = "mood.changed"
     KNOB = "knob"
     ENVIRONMENT_CHANGED = "environment.changed"
+    EMOTION_BOOST = "emotion.boost"
 
 class KnobUserAction(str, Enum):
     PRESS = "press"
@@ -77,6 +79,17 @@ class SetTemAndHumi(Action):
         super().__init__(ActionType.SET_TEMP_HUMI, temp_and_humi)
 
 @dataclass(frozen=True)
+class BoostEmotion(Action):
+    mood: Mood = Mood.NEUTRAL
+    amount: int = 100
+
+    def __init__(self, mood: Mood, amount: int = 100) -> None:
+        object.__setattr__(self, 'mood', mood)
+        object.__setattr__(self, 'amount', amount)
+        object.__setattr__(self, 'payload', (mood, amount))
+        object.__setattr__(self, 'type', ActionType.BOOST_EMOTION)
+
+@dataclass(frozen=True)
 class AppState:
     mood: Mood = Mood.NEUTRAL
     someone_around: bool = False
@@ -89,6 +102,8 @@ def reduce_state(state: AppState, action: Action) -> AppState:
             raise ValueError("SetMood action payload must be a Mood value.")
         return replace(state, mood=action.payload)
     if action.type == ActionType.KNOB:
+        return state
+    if action.type == ActionType.BOOST_EMOTION:
         return state
     if action.type == ActionType.SET_ENVIRONMENT:
         if not isinstance(action.payload, bool):

@@ -1,91 +1,184 @@
 # lcd_core.py
 import time
 import threading
-import digitalio
-import board
-import busio
 from PIL import Image, ImageDraw, ImageFont
 
-# Adafruit CircuitPython RGB Display
-import adafruit_rgb_display.ili9341 as ili9341
+# Optional hardware imports with graceful fallback for testing/off-Pi development
+try:
+    import board
+    import busio
+    import digitalio
+    import adafruit_rgb_display.ili9341 as ili9341
+    HARDWARE_AVAILABLE = True
+except (ImportError, NotImplementedError):
+    board = None
+    busio = None
+    digitalio = None
+    ili9341 = None
+    HARDWARE_AVAILABLE = False
+
+
+class _MockPin:
+    def __init__(self):
+        self.value = False
+        self.direction = None
+
+
+class _MockDisplay:
+    def __init__(self, width=240, height=320):
+        self.width = width
+        self.height = height
+
+    def image(self, img):
+        pass
 
 
 class LCDCore:
     """
-    Core Display Manager for ILI9341 SPI Display (240x320).
-    Handles graphics drawing, text wrapping, animations and automated backlight power management.
+    Core Display Manager for ILI9341 SPI Display (240x320 portrait).
+    Handles graphics drawing, animations, thread synchronization,
+    and automated 45-second inactivity backlight power management.
     """
-    def __init__(self, spi=None, cs_pin=None, dc_pin=None, rst_pin=None, bl_pin=None, width=240, height=320, timeout_seconds=10.0):
+    _instance = None
+    _singleton_lock = threading.Lock()
+
+    def __new__(cls, *args, **kwargs):
+        with cls._singleton_lock:
+            if cls._instance is None:
+                cls._instance = super(LCDCore, cls).__new__(cls)
+                cls._instance._initialized = False
+            return cls._instance
+
+    def __init__(
+        self,
+        spi=None,
+        cs_pin=None,
+        dc_pin=None,
+        rst_pin=None,
+        bl_pin=None,
+        width=240,
+        height=320,
+        timeout_seconds=45.0,
+    ):
+        if getattr(self, "_initialized", False):
+            return
+
         self.width = width
         self.height = height
         self.timeout_seconds = timeout_seconds
-        
-        # Inizializzazione standard senza parametri
-        if spi is None:
-            spi = busio.SPI(clock=board.SCK, MOSI=board.MOSI, MISO=board.MISO)
-        cs_pin = cs_pin or board.D8
-        dc_pin = dc_pin or board.D24
-        rst_pin = rst_pin or board.D13
-        bl_pin = bl_pin or board.D6
-        
-        # Setup Backlight Pin
-        self.bl_pin = digitalio.DigitalInOut(bl_pin)
-        self.bl_pin.direction = digitalio.Direction.OUTPUT
-        self.bl_pin.value = False  # Start with backlight OFF
-        
-        # Initialize Display Driver
-        self.disp = ili9341.ILI9341(
-            spi,
-            rotation=0, # 0 = portrait (240x320)
-            cs=digitalio.DigitalInOut(cs_pin),
-            dc=digitalio.DigitalInOut(dc_pin),
-            rst=digitalio.DigitalInOut(rst_pin),
-            baudrate=64000000,
-        )
+
+        # Concurrency & rendering locks
+        self._disp_lock = threading.RLock()
+        self._anim_lock = threading.RLock()
+        self._anim_stop_event = threading.Event()
+        self._anim_thread = None
+
+        # Backlight & power state
+        self._backlight_timer = None
+        self.is_screen_on = False
+
+        if HARDWARE_AVAILABLE and board is not None:
+            try:
+                if spi is None:
+                    spi = busio.SPI(clock=board.SCK, MOSI=board.MOSI, MISO=board.MISO)
+                cs_pin = cs_pin or board.D8
+                dc_pin = dc_pin or board.D24
+                rst_pin = rst_pin or board.D13
+                bl_pin = bl_pin or board.D6
+
+                self.bl_pin = digitalio.DigitalInOut(bl_pin)
+                self.bl_pin.direction = digitalio.Direction.OUTPUT
+                self.bl_pin.value = False
+
+                self.disp = ili9341.ILI9341(
+                    spi,
+                    rotation=0,  # portrait 240x320
+                    cs=digitalio.DigitalInOut(cs_pin),
+                    dc=digitalio.DigitalInOut(dc_pin),
+                    rst=digitalio.DigitalInOut(rst_pin),
+                    baudrate=64000000,
+                )
+            except Exception as e:
+                print(f"[lcd_core] Hardware init failed ({e}), using mock display.")
+                self.bl_pin = _MockPin()
+                self.disp = _MockDisplay(width, height)
+        else:
+            self.bl_pin = _MockPin()
+            self.disp = _MockDisplay(width, height)
 
         self.image = Image.new("RGB", (self.width, self.height))
         self.draw = ImageDraw.Draw(self.image)
-        
-        # Clear screen to black initially
-        self.draw.rectangle((0, 0, self.width, self.height), fill=(0, 0, 0))
-        self.disp.image(self.image)
 
-        # Timer state
-        self._backlight_timer = None
+        # Initially clear display to black
+        with self._disp_lock:
+            self.draw.rectangle((0, 0, self.width, self.height), fill=(0, 0, 0))
+            self.disp.image(self.image)
+
+        self._initialized = True
 
     # ==========================================
-    # Power & Backlight Management
+    # Power & Backlight Management (45s Inactivity)
     # ==========================================
-    
-    def _turn_off_backlight(self):
-        """Turns off the LCD backlight. Called by the inactivity timer."""
-        self.bl_pin.value = False
 
-    def _trigger_activity(self):
-        """
-        Wakes up the display (turns on backlight) and resets the inactivity timer.
-        Must be called at the beginning of any drawing/writing method.
-        """
-        self.bl_pin.value = True
-        
+    def turn_off(self):
+        """Puts the display to sleep: turns off backlight, stops animations, blanks screen."""
+        self.stop_animation()
+        try:
+            self.bl_pin.value = False
+        except Exception:
+            pass
+        self.is_screen_on = False
+
         if self._backlight_timer is not None:
             self._backlight_timer.cancel()
-            
-        self._backlight_timer = threading.Timer(self.timeout_seconds, self._turn_off_backlight)
+            self._backlight_timer = None
+
+        with self._disp_lock:
+            self.draw.rectangle((0, 0, self.width, self.height), fill=(0, 0, 0))
+            try:
+                self.disp.image(self.image)
+            except Exception:
+                pass
+
+    def turn_on(self):
+        """Wakes up the display: turns on backlight and starts 45s inactivity timer."""
+        try:
+            self.bl_pin.value = True
+        except Exception:
+            pass
+        self.is_screen_on = True
+        self.reset_inactivity_timer()
+
+    def reset_inactivity_timer(self):
+        """Resets the 45-second inactivity timer."""
+        if self._backlight_timer is not None:
+            self._backlight_timer.cancel()
+
+        self._backlight_timer = threading.Timer(self.timeout_seconds, self.turn_off)
+        self._backlight_timer.daemon = True
         self._backlight_timer.start()
 
+    def _trigger_activity(self):
+        """Called upon drawing or interaction to keep display on and active."""
+        if not self.is_screen_on:
+            self.turn_on()
+        else:
+            self.reset_inactivity_timer()
+
     def _update_display(self):
-        """Pushes the current PIL image buffer to the physical SPI display."""
-        self.disp.image(self.image)
+        """Pushes the current PIL image buffer to the physical SPI display under lock."""
+        try:
+            self.disp.image(self.image)
+        except Exception as e:
+            print(f"[lcd_core] SPI display update error: {e}")
 
     # ==========================================
     # Font Management Helper
     # ==========================================
-    
+
     def _get_font(self, size=16, bold=False, italic=False):
-        """Helper to load fonts. Defaults to standard Linux/Raspberry Pi paths."""
+        """Helper to load fonts with fallback."""
         base_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans"
-        
         if bold and italic:
             font_path = f"{base_path}-BoldOblique.ttf"
         elif bold:
@@ -94,119 +187,168 @@ class LCDCore:
             font_path = f"{base_path}-Oblique.ttf"
         else:
             font_path = f"{base_path}.ttf"
-            
+
         try:
             return ImageFont.truetype(font_path, size)
         except IOError:
             return ImageFont.load_default()
 
     # ==========================================
-    # High-Level API Methods
+    # Animation Control & Concurrency Safety
     # ==========================================
 
-    def _play_animation_frames(self, frames, frame_delay, cycles):
-        """Worker interno: esegue il loop dell'animazione senza bloccare il caller."""
+    def stop_animation(self, wait=True):
+        """Signals any currently running animation thread to stop and waits for it."""
+        with self._anim_lock:
+            self._anim_stop_event.set()
+            if wait and self._anim_thread is not None and self._anim_thread.is_alive():
+                if threading.current_thread() != self._anim_thread:
+                    self._anim_thread.join(timeout=1.0)
+            self._anim_thread = None
+
+    def _play_animation_frames(self, frames, frame_delay, cycles, on_complete=None):
+        """Background worker thread: plays animation frames while checking stop_event."""
         try:
             for _ in range(cycles):
                 for frame in frames:
-                    self.image.paste(frame)
-                    self._update_display()
-                    if frame_delay > 0:
-                        time.sleep(frame_delay)
+                    if self._anim_stop_event.is_set():
+                        return
+
+                    with self._disp_lock:
+                        self.image.paste(frame)
+                        self._update_display()
+
+                    # Sleep in small slices so stopping is immediate
+                    sleep_remaining = frame_delay
+                    while sleep_remaining > 0:
+                        if self._anim_stop_event.is_set():
+                            return
+                        slice_time = min(0.05, sleep_remaining)
+                        time.sleep(slice_time)
+                        sleep_remaining -= slice_time
+
+            if not self._anim_stop_event.is_set() and on_complete is not None:
+                on_complete()
         finally:
             self._trigger_activity()
 
-    def play_animation(self, animation, frame_delay=0.3, cycles=3):
+    def play_animation(self, animation, frame_delay=0.3, cycles=3, on_complete=None):
         """
-        Riproduce un'animazione sullo schermo.
-        Mantiene acceso il backlight e fa partire il timeout solo alla fine.
-        L'animazione viene eseguita in un thread separato per evitare di bloccare
-        il flusso principale dell'applicazione mentre avanza il frame.
+        Plays an animation on the display in a dedicated thread.
+        Cleanly cancels and stops any previous animation before starting.
         """
-        # Accendiamo il display senza far partire il timer di timeout
-        self.bl_pin.value = True
-        if self._backlight_timer is not None:
-            self._backlight_timer.cancel()
+        self.stop_animation()
+
+        # Wake up display
+        self.turn_on()
 
         frames = animation.get_frames() if animation is not None else []
         if not frames:
+            if on_complete:
+                on_complete()
             return
 
         try:
-            cycles = int(cycles)
+            cycles = max(1, int(cycles))
         except (TypeError, ValueError):
             cycles = 1
-        cycles = max(1, cycles)
 
         try:
-            frame_delay = float(frame_delay)
+            frame_delay = max(0.0, float(frame_delay))
         except (TypeError, ValueError):
             frame_delay = 0.3
-        frame_delay = max(0.0, frame_delay)
 
-        animation_thread = threading.Thread(
-            target=self._play_animation_frames,
-            args=(frames, frame_delay, cycles),
-            daemon=True,
-        )
-        animation_thread.start()
+        with self._anim_lock:
+            self._anim_stop_event.clear()
+            self._anim_thread = threading.Thread(
+                target=self._play_animation_frames,
+                args=(frames, frame_delay, cycles, on_complete),
+                daemon=True,
+            )
+            self._anim_thread.start()
+
+    # ==========================================
+    # High-Level Page Rendering Primitives
+    # ==========================================
+
+    def render_image(self, img):
+        """Directly paints an external PIL image to the display buffer."""
+        self.stop_animation()
+        self._trigger_activity()
+        with self._disp_lock:
+            self.image.paste(img)
+            self._update_display()
 
     def set_background_color(self, color):
         """Fills the entire screen with the specified color."""
+        self.stop_animation()
         self._trigger_activity()
-        self.draw.rectangle((0, 0, self.width, self.height), fill=color)
-        self._update_display()
+        with self._disp_lock:
+            self.draw.rectangle((0, 0, self.width, self.height), fill=color)
+            self._update_display()
 
     def write_rows(self, rows, **options):
-        # [Codice originale invariato qui]
+        """Prints a list of strings on separate lines with layout styling."""
+        self.stop_animation()
         self._trigger_activity()
+
         bg_color = options.get("bg_color", (0, 0, 0))
         text_color = options.get("text_color", (255, 255, 255))
         font_size = options.get("font_size", 16)
         bold = options.get("bold", False)
         italic = options.get("italic", False)
         line_spacing = options.get("line_spacing", 4)
-        self.draw.rectangle((0, 0, self.width, self.height), fill=bg_color)
-        font = self._get_font(size=font_size, bold=bold, italic=italic)
-        y_cursor = 10
-        for row in rows:
-            self.draw.text((10, y_cursor), row, font=font, fill=text_color)
-            bbox = self.draw.textbbox((10, y_cursor), row, font=font)
-            text_height = bbox[3] - bbox[1]
-            y_cursor += text_height + line_spacing
-        self._update_display()
+        margin_y = options.get("margin_y", 10)
+        margin_x = options.get("margin_x", 10)
+
+        with self._disp_lock:
+            self.draw.rectangle((0, 0, self.width, self.height), fill=bg_color)
+            font = self._get_font(size=font_size, bold=bold, italic=italic)
+
+            y_cursor = margin_y
+            for row in rows:
+                self.draw.text((margin_x, y_cursor), row, font=font, fill=text_color)
+                bbox = self.draw.textbbox((margin_x, y_cursor), row, font=font)
+                text_height = bbox[3] - bbox[1]
+                y_cursor += text_height + line_spacing
+
+            self._update_display()
 
     def write_text(self, text, **options):
-        # [Codice originale invariato qui]
+        """Prints a single long string, automatically wrapping it to next line."""
+        self.stop_animation()
         self._trigger_activity()
+
         bg_color = options.get("bg_color", (0, 0, 0))
         text_color = options.get("text_color", (255, 255, 255))
         font_size = options.get("font_size", 16)
         padding = options.get("padding", 10)
-        self.draw.rectangle((0, 0, self.width, self.height), fill=bg_color)
-        font = self._get_font(size=font_size)
-        max_width = self.width - (padding * 2)
-        words = text.split()
-        lines = []
-        current_line = ""
-        for word in words:
-            test_line = f"{current_line}{word} "
-            bbox = self.draw.textbbox((0, 0), test_line, font=font)
-            test_width = bbox[2] - bbox[0]
-            if test_width <= max_width:
-                current_line = test_line
-            else:
-                lines.append(current_line)
-                current_line = f"{word} "
-        lines.append(current_line)
-        y_cursor = padding
-        for line in lines:
-            self.draw.text((padding, y_cursor), line, font=font, fill=text_color)
-            bbox = self.draw.textbbox((0, 0), line, font=font)
-            text_height = bbox[3] - bbox[1]
-            y_cursor += text_height + 4
-        self._update_display()
-        
-    def draw_graph(self, points, title="Graph", x_label="X", y_label="Y"):
-        # [Codice originale invariato]
-        pass # Rimosso per brevità, mantieni il tuo originale
+
+        with self._disp_lock:
+            self.draw.rectangle((0, 0, self.width, self.height), fill=bg_color)
+            font = self._get_font(size=font_size)
+
+            max_width = self.width - (padding * 2)
+            words = text.split()
+            lines = []
+            current_line = ""
+
+            for word in words:
+                test_line = f"{current_line}{word} "
+                bbox = self.draw.textbbox((0, 0), test_line, font=font)
+                test_width = bbox[2] - bbox[0]
+                if test_width <= max_width:
+                    current_line = test_line
+                else:
+                    lines.append(current_line)
+                    current_line = f"{word} "
+            lines.append(current_line)
+
+            y_cursor = padding
+            for line in lines:
+                self.draw.text((padding, y_cursor), line, font=font, fill=text_color)
+                bbox = self.draw.textbbox((0, 0), line, font=font)
+                text_height = bbox[3] - bbox[1]
+                y_cursor += text_height + 4
+
+            self._update_display()
