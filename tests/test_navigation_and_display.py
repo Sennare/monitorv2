@@ -2,7 +2,7 @@ import unittest
 import time
 from datetime import datetime, timedelta
 
-from state import StateStore, EventType, Mood, AppState, Knob, KnobUserAction, BoostEmotion
+from state import StateStore, EventType, Mood, AppState, Knob, KnobUserAction, BoostEmotion, SetTemAndHumi, TempAndHumi
 from display.lcd_core import LCDCore
 from display.animations.welcome import CuteCiaoAnimation
 from soul.emotion_state_manager import EmotionStateManager
@@ -255,6 +255,120 @@ class TestLCDCoreAndNavigation(unittest.TestCase):
 
         home_empty = Home(db=EmptyDB())
         home_empty.render(self.lcd, state)
+
+    def test_inactivity_timeout_falls_back_to_home_and_shuts_down_backlight(self):
+        """Verify 45s inactivity from another page falls back to Home and turns off backlight."""
+        nav = Navigation(start_with_welcome=False)
+        self.navs.append(nav)
+
+        # User is in Settings
+        nav.navigate_to(Location.SETTINGS.value)
+        self.assertEqual(nav.current_location_id, Location.SETTINGS.value)
+        self.assertTrue(nav.lcd.is_screen_on)
+
+        # 45s inactivity triggers
+        nav._on_inactivity_timeout()
+
+        # Should fall back to Home and turn off backlight
+        self.assertEqual(nav.current_location_id, Location.HOME.value)
+        self.assertFalse(nav.lcd.is_screen_on, "Backlight should be turned off")
+
+    def test_inactivity_timeout_on_home_resets_time_travel_and_shuts_down_backlight(self):
+        """Verify 45s inactivity while time-traveling on Home resets history to now and turns off backlight."""
+        nav = Navigation(start_with_welcome=False)
+        self.navs.append(nav)
+        home_page: Home = nav.pages[Location.HOME.value]
+
+        # User travelled back in time
+        home_page.hours_offset = 6
+        self.assertTrue(nav.lcd.is_screen_on)
+
+        # 45s inactivity triggers
+        nav._on_inactivity_timeout()
+
+        # Should reset time-travel and shut down backlight
+        self.assertEqual(home_page.hours_offset, 0, "Graph history should reset to 0 (now)")
+        self.assertFalse(nav.lcd.is_screen_on, "Backlight should be turned off")
+
+    def test_telemetry_update_does_not_wake_display_or_reset_inactivity_timer(self):
+        """Verify background sensor events do not inadvertently wake display or reset inactivity timer."""
+        nav = Navigation(start_with_welcome=False)
+        self.navs.append(nav)
+
+        # Display sleeps
+        nav.lcd.turn_off()
+        self.assertFalse(nav.lcd.is_screen_on)
+
+        # Sensor dispatches telemetry update
+        self.store.dispatch(SetTemAndHumi(TempAndHumi(24.5, 55.0)))
+
+        # Display should stay off (no waking from background sensor loops)
+        self.assertFalse(nav.lcd.is_screen_on)
+
+    def test_turn_off_shuts_down_backlight_without_blanking_lcd_image(self):
+        """Verify turn_off only disables the backlight pin and preserves LCD pixel buffer content."""
+        # Paint red on the display image
+        self.lcd.turn_on()
+        self.lcd.draw.rectangle((0, 0, 50, 50), fill=(255, 0, 0))
+
+        # Turn off backlight
+        self.lcd.turn_off()
+        self.assertFalse(self.lcd.is_screen_on)
+
+        # Check that the image was not overwritten by a black rectangle
+        pixel = self.lcd.image.getpixel((25, 25))
+        self.assertEqual(pixel, (255, 0, 0), "LCD image buffer should be preserved when backlight turns off")
+
+    def test_lcd_brightness_control(self):
+        """Verify LCDCore set_brightness clamps between 10% and 100% and preserves state across sleep."""
+        self.lcd.set_brightness(70)
+        self.assertEqual(self.lcd.get_brightness(), 70)
+
+        # Clamping
+        self.lcd.set_brightness(150)
+        self.assertEqual(self.lcd.get_brightness(), 100)
+        self.lcd.set_brightness(0)
+        self.assertEqual(self.lcd.get_brightness(), 10)
+
+        # Preserved across sleep/wake
+        self.lcd.set_brightness(80)
+        self.lcd.turn_off()
+        self.assertEqual(self.lcd.get_brightness(), 80)
+        self.lcd.turn_on()
+        self.assertEqual(self.lcd.get_brightness(), 80)
+
+    def test_settings_adjust_brightness_with_knob(self):
+        """Verify user can select and adjust backlight brightness via rotary knob in Settings."""
+        nav = Navigation(start_with_welcome=False)
+        self.navs.append(nav)
+
+        nav.navigate_to(Location.SETTINGS.value)
+        settings_page: Settings = nav.pages[Location.SETTINGS.value]
+        self.lcd.set_brightness(50)
+
+        # Select Backlight Brightness item (index 1)
+        settings_page.selected_index = 1
+        self.assertFalse(settings_page.is_editing_brightness)
+
+        # Press knob to enter editing mode
+        self.store.dispatch(Knob(KnobUserAction.PRESS))
+        self.assertTrue(settings_page.is_editing_brightness)
+
+        # Turn right to increase brightness (+10% -> 60%)
+        self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))
+        self.assertEqual(self.lcd.get_brightness(), 60)
+
+        self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))
+        self.assertEqual(self.lcd.get_brightness(), 70)
+
+        # Turn left to decrease brightness (-10% -> 60%)
+        self.store.dispatch(Knob(KnobUserAction.TURN_LEFT))
+        self.assertEqual(self.lcd.get_brightness(), 60)
+
+        # Press to save / exit editing mode
+        self.store.dispatch(Knob(KnobUserAction.PRESS))
+        self.assertFalse(settings_page.is_editing_brightness)
+        self.assertEqual(self.lcd.get_brightness(), 60)
 
 
 if __name__ == "__main__":

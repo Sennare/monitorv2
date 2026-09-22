@@ -48,6 +48,18 @@ class Navigation:
         self.current_location_id: str = initial_loc
         self.current_page: AbstractLocation = self.pages[initial_loc]
 
+        # Register inactivity timeout handler with LCDCore
+        self.lcd.on_inactivity_timeout = self._on_inactivity_timeout
+
+        # Auto-refresh loop for Home page (every 30s)
+        self._auto_refresh_stop_event = threading.Event()
+        self._auto_refresh_thread = threading.Thread(
+            target=self._auto_refresh_loop,
+            daemon=True,
+            name="NavAutoRefresh",
+        )
+        self._auto_refresh_thread.start()
+
         # Subscribe to rotary knob events
         self._unsubscribers = [
             self.state_store.subscribe(EventType.KNOB.value, self._on_knob_interacted),
@@ -56,11 +68,16 @@ class Navigation:
         ]
 
         # Start initial page lifecycle
+        self.lcd.turn_on()
         self.current_page.on_enter()
         self.render()
 
     def close(self) -> None:
-        """Clean up subscribers and stop any animations."""
+        """Clean up subscribers and stop any animations or background threads."""
+        self._auto_refresh_stop_event.set()
+        if self._auto_refresh_thread.is_alive() and threading.current_thread() != self._auto_refresh_thread:
+            self._auto_refresh_thread.join(timeout=1.0)
+
         self.lcd.stop_animation()
         for unsub in self._unsubscribers:
             try:
@@ -127,22 +144,58 @@ class Navigation:
             with self._lock:
                 self.render()
 
+    def _on_inactivity_timeout(self) -> None:
+        """
+        Handles 45-second inactivity timeout:
+        Falls back to Home page (or resets time-travel if already on Home),
+        renders the fresh Home page to the LCD buffer, and turns off the backlight
+        while keeping the LCD controller on.
+        """
+        with self._lock:
+            # 1. Fall back to Home if in another location
+            if self.current_location_id != Location.HOME.value:
+                print(f"[nav] Inactivity timeout (45s): falling back from {self.current_location_id} to HOME")
+                self.current_page.on_exit()
+                self.lcd.stop_animation()
+                self.current_location_id = Location.HOME.value
+                self.current_page = self.pages[Location.HOME.value]
+                self.current_page.on_enter()
+            else:
+                # If already on Home, reset graph history / time-travel
+                if hasattr(self.current_page, "reset_time_travel"):
+                    self.current_page.reset_time_travel()
+
+            # 2. Render fresh Home view to the LCD display buffer
+            self.render()
+
+            # 3. Turn off backlight while keeping LCD on
+            self.lcd.turn_off()
+
+    def _auto_refresh_loop(self) -> None:
+        """Auto-refreshes data on the Home page every 30 seconds."""
+        while not self._auto_refresh_stop_event.is_set():
+            if self._auto_refresh_stop_event.wait(timeout=30.0):
+                break
+            with self._lock:
+                if self.current_location_id == Location.HOME.value:
+                    try:
+                        self.render()
+                    except Exception as e:
+                        print(f"[nav] Home 30s auto-refresh error: {e}")
+
     def _on_telemetry_updated(self, state: AppState) -> None:
         """Refreshes live metrics on screen if the display is currently on."""
         with self._lock:
             if not self.lcd.is_screen_on:
                 return
-            # Only live-update pages that display environmental metrics
-            if self.current_location_id in (Location.HOME.value, Location.SENSORS.value):
+            # SensorsPage displays real-time 5s sensor telemetry when actively viewed.
+            # Homepage data is refreshed at the 30s cadence.
+            if self.current_location_id == Location.SENSORS.value:
                 self.render()
 
     def _on_mood_updated(self, mood) -> None:
-        """Refreshes mood badge if display is on and home page is active."""
-        with self._lock:
-            if not self.lcd.is_screen_on:
-                return
-            if self.current_location_id == Location.HOME.value:
-                self.render()
+        """Refreshes mood badge if display is on."""
+        pass
 
     def render(self) -> None:
         """Paints current page to LCD using current AppState."""

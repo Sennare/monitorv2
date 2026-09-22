@@ -1,4 +1,5 @@
 # lcd_core.py
+import os
 import time
 import threading
 from PIL import Image, ImageDraw, ImageFont
@@ -76,19 +77,28 @@ class LCDCore:
         # Backlight & power state
         self._backlight_timer = None
         self.is_screen_on = False
+        self.on_inactivity_timeout = None
+        self.brightness = 100  # Default 100%
+        self._pwm = None
 
         if HARDWARE_AVAILABLE and board is not None:
+            # Pin mapping: RST = GPIO 13 (Pin 33), BL = GPIO 6 (Pin 31)
+            # Supports optional environment variable overrides for custom bench wiring
+            env_rst = os.environ.get("LCD_RST_PIN")
+            env_bl = os.environ.get("LCD_BL_PIN")
+            rst_num = int(env_rst) if env_rst else 13
+            bl_num = int(env_bl) if env_bl else 6
+
+            rst_pin = rst_pin or getattr(board, f"D{rst_num}", board.D13)
+            bl_pin = bl_pin or getattr(board, f"D{bl_num}", board.D6)
+            cs_pin = cs_pin or board.D8
+            dc_pin = dc_pin or board.D24
+
+            # 1. Initialize Display SPI Controller independently
+            # Hardware reset pin is strictly dedicated to ILI9341 and NEVER pulsed by PWM
             try:
                 if spi is None:
                     spi = busio.SPI(clock=board.SCK, MOSI=board.MOSI, MISO=board.MISO)
-                cs_pin = cs_pin or board.D8
-                dc_pin = dc_pin or board.D24
-                rst_pin = rst_pin or board.D13
-                bl_pin = bl_pin or board.D6
-
-                self.bl_pin = digitalio.DigitalInOut(bl_pin)
-                self.bl_pin.direction = digitalio.Direction.OUTPUT
-                self.bl_pin.value = False
 
                 self.disp = ili9341.ILI9341(
                     spi,
@@ -98,10 +108,17 @@ class LCDCore:
                     rst=digitalio.DigitalInOut(rst_pin),
                     baudrate=64000000,
                 )
+                print(f"[lcd_core] Hardware ILI9341 SPI display initialized (CS={cs_pin}, DC={dc_pin}, RST={rst_pin}).")
             except Exception as e:
-                print(f"[lcd_core] Hardware init failed ({e}), using mock display.")
-                self.bl_pin = _MockPin()
+                print(f"[lcd_core] Hardware display init failed ({e}), using mock display.")
                 self.disp = _MockDisplay(width, height)
+
+            # 2. Initialize Backlight in a completely isolated block so it NEVER aborts display initialization
+            try:
+                self._init_backlight(bl_pin)
+            except Exception as e:
+                print(f"[lcd_core] Backlight setup error ({e}), using mock pin.")
+                self.bl_pin = _MockPin()
         else:
             self.bl_pin = _MockPin()
             self.disp = _MockDisplay(width, height)
@@ -116,53 +133,113 @@ class LCDCore:
 
         self._initialized = True
 
+    def _init_backlight(self, bl_pin):
+        """
+        Initializes backlight with software PWM brightness control if available,
+        falling back to digital on/off.
+        The backlight pin is strictly isolated and never touches the display reset line.
+        """
+        self._pwm = None
+        self.bl_pin = None
+
+        # 1. Try gpiozero software PWM for flexible brightness modulation (10%-100%)
+        try:
+            from gpiozero import PWMOutputDevice
+            pin_num = getattr(bl_pin, "id", None)
+            if not isinstance(pin_num, int):
+                digits = "".join([c for c in str(bl_pin) if c.isdigit()])
+                pin_num = int(digits) if digits else 6
+
+            self._pwm = PWMOutputDevice(pin_num, frequency=200, initial_value=1.0)
+            print(f"[lcd_core] Backlight initialized with gpiozero PWM on GPIO {pin_num}.")
+        except Exception as e:
+            self._pwm = None
+            print(f"[lcd_core] PWM init not available ({e}), falling back to digital on/off.")
+
+        # 2. Fallback to digital on/off via digitalio
+        if self._pwm is None:
+            try:
+                self.bl_pin = digitalio.DigitalInOut(bl_pin)
+                self.bl_pin.direction = digitalio.Direction.OUTPUT
+                self.bl_pin.value = True
+                print(f"[lcd_core] Backlight initialized with digital on/off on pin {bl_pin}.")
+            except Exception as e:
+                print(f"[lcd_core] Digital backlight pin setup failed ({e}), using mock pin.")
+                self.bl_pin = _MockPin()
+
     # ==========================================
-    # Power & Backlight Management (45s Inactivity)
+    # Power & Backlight Management (45s Inactivity & Brightness)
     # ==========================================
 
+    @property
+    def is_backlight_on(self) -> bool:
+        return self.is_screen_on
+
+    def _apply_backlight(self):
+        """Applies current brightness and power state to physical backlight."""
+        target_pct = self.brightness if self.is_screen_on else 0
+        if self._pwm is not None:
+            try:
+                if hasattr(self._pwm, "duty_cycle"):
+                    self._pwm.duty_cycle = int((target_pct / 100.0) * 65535)
+                elif hasattr(self._pwm, "value"):
+                    self._pwm.value = target_pct / 100.0
+            except Exception as e:
+                print(f"[lcd_core] Backlight PWM error: {e}")
+        elif hasattr(self, "bl_pin") and self.bl_pin is not None:
+            try:
+                self.bl_pin.value = (target_pct > 0)
+            except Exception:
+                pass
+
+    def set_brightness(self, level: int) -> int:
+        """Sets backlight brightness percentage (10% to 100%)."""
+        self.brightness = max(10, min(100, int(level)))
+        self._apply_backlight()
+        return self.brightness
+
+    def get_brightness(self) -> int:
+        """Gets current backlight brightness percentage."""
+        return self.brightness
+
     def turn_off(self):
-        """Puts the display to sleep: turns off backlight, stops animations, blanks screen."""
+        """Puts the display to sleep: turns off backlight, stops animations, keeps LCD image."""
         self.stop_animation()
-        try:
-            self.bl_pin.value = False
-        except Exception:
-            pass
         self.is_screen_on = False
+        self._apply_backlight()
 
         if self._backlight_timer is not None:
             self._backlight_timer.cancel()
             self._backlight_timer = None
 
-        with self._disp_lock:
-            self.draw.rectangle((0, 0, self.width, self.height), fill=(0, 0, 0))
-            try:
-                self.disp.image(self.image)
-            except Exception:
-                pass
-
     def turn_on(self):
         """Wakes up the display: turns on backlight and starts 45s inactivity timer."""
-        try:
-            self.bl_pin.value = True
-        except Exception:
-            pass
         self.is_screen_on = True
+        self._apply_backlight()
         self.reset_inactivity_timer()
+
+    def _on_inactivity_timeout_fired(self):
+        """Callback executed when the inactivity timer elapses."""
+        if self.on_inactivity_timeout is not None:
+            try:
+                self.on_inactivity_timeout()
+                return
+            except Exception as e:
+                print(f"[lcd_core] Error in on_inactivity_timeout callback: {e}")
+        self.turn_off()
 
     def reset_inactivity_timer(self):
         """Resets the 45-second inactivity timer."""
         if self._backlight_timer is not None:
             self._backlight_timer.cancel()
 
-        self._backlight_timer = threading.Timer(self.timeout_seconds, self.turn_off)
+        self._backlight_timer = threading.Timer(self.timeout_seconds, self._on_inactivity_timeout_fired)
         self._backlight_timer.daemon = True
         self._backlight_timer.start()
 
     def _trigger_activity(self):
-        """Called upon drawing or interaction to keep display on and active."""
-        if not self.is_screen_on:
-            self.turn_on()
-        else:
+        """Called upon user interaction to reset inactivity timer if display is active."""
+        if self.is_screen_on:
             self.reset_inactivity_timer()
 
     def _update_display(self):
@@ -274,7 +351,6 @@ class LCDCore:
     def render_image(self, img):
         """Directly paints an external PIL image to the display buffer."""
         self.stop_animation()
-        self._trigger_activity()
         with self._disp_lock:
             self.image.paste(img)
             self._update_display()
@@ -282,7 +358,6 @@ class LCDCore:
     def set_background_color(self, color):
         """Fills the entire screen with the specified color."""
         self.stop_animation()
-        self._trigger_activity()
         with self._disp_lock:
             self.draw.rectangle((0, 0, self.width, self.height), fill=color)
             self._update_display()
@@ -290,7 +365,6 @@ class LCDCore:
     def write_rows(self, rows, **options):
         """Prints a list of strings on separate lines with layout styling."""
         self.stop_animation()
-        self._trigger_activity()
 
         bg_color = options.get("bg_color", (0, 0, 0))
         text_color = options.get("text_color", (255, 255, 255))
@@ -317,7 +391,6 @@ class LCDCore:
     def write_text(self, text, **options):
         """Prints a single long string, automatically wrapping it to next line."""
         self.stop_animation()
-        self._trigger_activity()
 
         bg_color = options.get("bg_color", (0, 0, 0))
         text_color = options.get("text_color", (255, 255, 255))

@@ -83,7 +83,7 @@ remote-monitor/
 │       ├── welcome_page.py     # Startup welcome animation & auto-transition
 │       ├── home.py             # Home dashboard with 24h pixel-binned graph & time-travel
 │       ├── menu.py             # Interactive vertical selection menu
-│       ├── settings.py         # System settings (triggers ANGRY emotion on soul)
+│       ├── settings.py         # System settings with adjustable backlight brightness (triggers ANGRY emotion)
 │       └── sensors_page.py     # Detailed environmental telemetry (triggers CURIOUS)
 ├── database/                   # Persistence layer
 │   ├── database.py             # PostgreSQL client (psycopg2) for insert/query & time-range fetch
@@ -112,7 +112,7 @@ remote-monitor/
 | `input/temp.py` | Reads temperature and relative humidity from the AHTx0 I2C sensor every 5 seconds. |
 | `display/oled.py` | Displays animated expressions on the SSD1306 OLED; handles power states via `device.hide()` / `device.show()`. |
 | `display/lcd.py` | Drives HD44780 20x4 LCD via PCF8574 with smart line-differential updates to minimize I2C bus load. |
-| `display/lcd_core.py` | Provides drawing primitives, thread-safe animation cancellation (`_anim_stop_event`, `_disp_lock`), and automated 45-second inactivity backlight power management for the ILI9341 SPI color TFT display. |
+| `display/lcd_core.py` | Provides drawing primitives, PWM backlight brightness control (10%-100%), thread-safe animation cancellation (`_anim_stop_event`, `_disp_lock`), and automated 45-second inactivity backlight sleep management for the ILI9341 SPI color TFT display. |
 | `display/ui_icons.py` | Procedural vector icon drawing library (Home, Sensors, Settings, Thermometer, Chevrons) replacing missing font emojis. |
 | `display/animations/` | Defines frame sequences for full-color LCD animations using PIL vector drawing. |
 | `navigation/` | Stateful screen manager (`Welcome`, `Home`, `Menu`, `Settings`, `Sensors`) routing encoder rotations/presses and triggering navigation-linked emotions. |
@@ -200,7 +200,7 @@ flowchart TD
 5. **Subsystem Reaction:**
    - **OLED Controller:** On `mood.changed`, updates its target mood and awakens its animation thread immediately via `threading.Event.set()`. On `environment.changed`, calls `device.show()` or `device.hide()` depending on presence.
    - **Emotion Engine:** Specific emotion classes increment internal levels upon receiving relevant bus events, and `EmotionStateManager` handles `emotion.boost` to immediately elevate target emotions (e.g., Angry on Settings navigation).
-   - **Navigation:** Manages active LCD pages (`Welcome`, `Home`, `Menu`, `Settings`, `Sensors`). Handles display sleep/wake: turns off display after 45s of inactivity, wakes up on knob interaction, and updates views. On `Home`, rotary turns navigate back/forward across historical 24h telemetry (capped at now), while press opens `Menu`. Waking up or entering Home resets the time travel back to now.
+   - **Navigation:** Manages active LCD pages (`Welcome`, `Home`, `Menu`, `Settings`, `Sensors`). Handles display sleep/wake: after 45s of user inactivity (no rotary encoder events), it falls back to `Home` (or resets graph time-travel to "now"), renders the fresh view to the LCD buffer, and shuts off the backlight while keeping the LCD display powered on. Auto-refreshes Home data every 30 seconds via a background thread without waking the backlight. Waking the display via knob turn or press re-illuminates the backlight and restarts the 45s timer.
    - **Librian:** Caches the latest valid telemetry and writes it to PostgreSQL every 15 minutes.
 
 ### Concurrency Architecture
@@ -211,6 +211,7 @@ To maintain high responsiveness on the single-board computer, the codebase blend
   - `OledDisplay._animation_loop`: High-priority OLED frame rendering loop.
   - `Lcd._render_loop` & `_backlight_watchdog`: I2C character LCD differential buffer painter and backlight sleep timer.
   - `LCDCore._play_animation_frames`: Dedicated thread for SPI LCD animations, with non-blocking cooperative cancellation via `_anim_stop_event` and `_disp_lock` (`threading.RLock`) to completely eliminate race conditions and frame collisions during transitions.
+  - `Navigation._auto_refresh_thread`: Dedicated 30-second daemon thread refreshing Home page sensor and 24h telemetry without disturbing backlight power state or inactivity countdowns.
   - `Librian._persist_runner`: 15-minute background database commit loop.
   - `BaseEmotion._core_loop`: Emotion cooldown calculation loop using non-blocking mutexes (`_task_lock.acquire(blocking=False)`).
 
@@ -230,8 +231,8 @@ The application interfaces directly with Raspberry Pi 3 physical header pins via
 | **TFT Display (ILI9341) SPI** | Hardware SPI0 | Pin 19 (MOSI), Pin 23 (SCLK), Pin 21 (MISO) | GPIO 10, GPIO 11, GPIO 9 | Hardware SPI at up to 64 MHz (`baudrate=64000000`) |
 | **TFT LCD Chip Select (CS)** | Direct GPIO | Pin 24 | GPIO 8 (`board.D8`) | Active Low SPI Chip Select |
 | **TFT LCD Data/Command (DC)** | Direct GPIO | Pin 18 | GPIO 24 (`board.D24`)| Data / Command mode selector |
-| **TFT LCD Reset (RST)** | Direct GPIO | Pin 33 | GPIO 13 (`board.D13`)| Active Low Hardware Reset |
-| **TFT LCD Backlight (BL/LED)** | Direct GPIO | Pin 31 | GPIO 6 (`board.D6`) | High = On, Low = Off; managed by inactivity timer |
+| **TFT LCD Reset (RST)** | Direct GPIO | Pin 33 | GPIO 13 (`board.D13`)| Active Low Hardware Reset (configurable via `LCD_RST_PIN`) |
+| **TFT LCD Backlight (BL/LED)** | Software PWM / GPIO | Pin 31 | GPIO 6 (`board.D6`)| PWM brightness control (10%-100%) & sleep timer (configurable via `LCD_BL_PIN`) |
 | **PIR Motion Sensor** | Direct GPIO | Pin 29 | GPIO 5 | Active High, `pull_up=False`, `bounce_time=0.1s` |
 | **Rotary Encoder Button** | Direct GPIO | Pin 11 | GPIO 17 | Active Low, internal pull-up, `bounce_time=0.05s` |
 | **Rotary Encoder Left (A)** | Direct GPIO | Pin 13 | GPIO 27 | Active Low, internal pull-up, quadrature channel A |
@@ -297,7 +298,7 @@ When developing or modifying code for this project, all future contributors (AI 
 ### 4. Display Life & Power Conservation
 - **Burn-in & Power Protection:** Both OLED (organic LEDs) and LCD backlights degrade over time if left on continuously:
   - The OLED display must automatically sleep via `self.device.hide()` when `AppState.someone_around` is `False`.
-  - The LCD display is powered off by default; upon physical user interaction (rotary encoder turn or press), the display turns on (backlight active) and automatically shuts down after 45 seconds of inactivity (`timeout_seconds=45.0`). Waking the display preserves current active page state.
+  - The LCD display backlight is powered off by default; upon physical user interaction (rotary encoder turn or press), the display turns on (backlight active) and automatically shuts down after 45 seconds of inactivity (`timeout_seconds=45.0`). Shutting down turns off the backlight (`bl_pin.value = False`) but keeps the LCD display controller on with the Home screen visible (no black blanking). While the backlight is asleep, the Home page continues to auto-refresh every 30s silently without turning the backlight back on. First physical interaction re-illuminates the backlight.
 
 ### 5. Architectural Cleanliness & State Discipline
 - **Single Source of Truth:** All application state resides exclusively inside `StateStore`. Subsystems must never maintain private authoritative state copies.
