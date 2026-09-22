@@ -10,6 +10,7 @@ from .locations.home import Home
 from .locations.menu import Menu
 from .locations.settings import Settings
 from .locations.sensors_page import SensorsPage
+from .locations.emotions_page import EmotionsPage
 
 
 class Location(str, Enum):
@@ -18,6 +19,7 @@ class Location(str, Enum):
     MENU = "MENU"
     SETTINGS = "SETTINGS"
     SENSORS = "SENSORS"
+    EMOTIONS = "EMOTIONS"
 
 
 class Navigation:
@@ -41,6 +43,7 @@ class Navigation:
             Location.MENU.value: Menu(),
             Location.SETTINGS.value: Settings(),
             Location.SENSORS.value: SensorsPage(),
+            Location.EMOTIONS.value: EmotionsPage(),
         }
 
         # Set initial location
@@ -51,7 +54,7 @@ class Navigation:
         # Register inactivity timeout handler with LCDCore
         self.lcd.on_inactivity_timeout = self._on_inactivity_timeout
 
-        # Auto-refresh loop for Home page (every 30s)
+        # Auto-refresh loop for Home page (every 30s) and Emotions page (every 1s)
         self._auto_refresh_stop_event = threading.Event()
         self._auto_refresh_thread = threading.Thread(
             target=self._auto_refresh_loop,
@@ -65,6 +68,7 @@ class Navigation:
             self.state_store.subscribe(EventType.KNOB.value, self._on_knob_interacted),
             self.state_store.subscribe(EventType.ENVIRONMENT_CHANGED.value, self._on_telemetry_updated),
             self.state_store.subscribe(EventType.MOOD_CHANGED.value, self._on_mood_updated),
+            self.state_store.subscribe(EventType.EMOTIONS_UPDATED.value, self._on_emotions_updated),
         ]
 
         # Start initial page lifecycle
@@ -175,16 +179,25 @@ class Navigation:
             self.lcd.turn_off()
 
     def _auto_refresh_loop(self) -> None:
-        """Auto-refreshes data on the Home page every 30 seconds."""
+        """Auto-refreshes data on the Home page every 30 seconds, and Emotions page every 1 second."""
+        home_counter = 0
         while not self._auto_refresh_stop_event.is_set():
-            if self._auto_refresh_stop_event.wait(timeout=30.0):
+            if self._auto_refresh_stop_event.wait(timeout=1.0):
                 break
+            home_counter += 1
             with self._lock:
-                if self.current_location_id == Location.HOME.value:
+                if self.current_location_id == Location.EMOTIONS.value and self.lcd.is_screen_on:
                     try:
                         self.render()
                     except Exception as e:
-                        print(f"[nav] Home 30s auto-refresh error: {e}")
+                        print(f"[nav] Emotions 1s auto-refresh error: {e}")
+                if home_counter >= 30:
+                    home_counter = 0
+                    if self.current_location_id == Location.HOME.value:
+                        try:
+                            self.render()
+                        except Exception as e:
+                            print(f"[nav] Home 30s auto-refresh error: {e}")
 
     def _on_telemetry_updated(self, state: AppState) -> None:
         """Refreshes live metrics on screen if the display is currently on."""
@@ -196,9 +209,21 @@ class Navigation:
             if self.current_location_id == Location.SENSORS.value:
                 self.render()
 
+    def _on_emotions_updated(self, emotion_levels) -> None:
+        """Refreshes emotions view when emotion levels are dispatched."""
+        with self._lock:
+            if not self.lcd.is_screen_on:
+                return
+            if self.current_location_id == Location.EMOTIONS.value:
+                self.render()
+
     def _on_mood_updated(self, mood) -> None:
-        """Refreshes mood badge if display is on."""
-        pass
+        """Refreshes active mood highlight on emotions view if display is on."""
+        with self._lock:
+            if not self.lcd.is_screen_on:
+                return
+            if self.current_location_id == Location.EMOTIONS.value:
+                self.render()
 
     def render(self) -> None:
         """Paints current page to LCD using current AppState."""

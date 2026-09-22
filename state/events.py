@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, field
 from enum import Enum
-from typing import Any
+from typing import Any, Dict
 
 class Mood(Enum):
     NEUTRAL = "neutral"
@@ -28,6 +28,7 @@ class ActionType(str, Enum):
     SET_ENVIRONMENT = "SetEnvironment"
     SET_TEMP_HUMI = "SetTempHumi"
     BOOST_EMOTION = "BoostEmotion"
+    SET_EMOTION_LEVELS = "SetEmotionLevels"
 
 
 class EventType(str, Enum):
@@ -36,6 +37,7 @@ class EventType(str, Enum):
     KNOB = "knob"
     ENVIRONMENT_CHANGED = "environment.changed"
     EMOTION_BOOST = "emotion.boost"
+    EMOTIONS_UPDATED = "emotions.updated"
 
 class KnobUserAction(str, Enum):
     PRESS = "press"
@@ -90,11 +92,22 @@ class BoostEmotion(Action):
         object.__setattr__(self, 'type', ActionType.BOOST_EMOTION)
 
 @dataclass(frozen=True)
+class SetEmotionLevels(Action):
+    payload: Dict[Mood, int] = field(default_factory=dict)
+
+    def __init__(self, levels: Dict[Mood, int]) -> None:
+        super().__init__(ActionType.SET_EMOTION_LEVELS, levels)
+
+def _default_emotion_levels() -> Dict[Mood, int]:
+    return {mood: 0 for mood in Mood}
+
+@dataclass(frozen=True)
 class AppState:
     mood: Mood = Mood.NEUTRAL
     someone_around: bool = False
     temperature: float = 0
     humidity: float = 0
+    emotion_levels: Dict[Mood, int] = field(default_factory=_default_emotion_levels)
 
 def reduce_state(state: AppState, action: Action) -> AppState:
     if action.type == ActionType.SET_MOOD:
@@ -113,4 +126,8 @@ def reduce_state(state: AppState, action: Action) -> AppState:
         if not isinstance(action.payload, TempAndHumi):
             raise ValueError("SetTempAndHumi action payload must be a TempAndHumi.")
         return replace(state, temperature = action.payload.temperature, humidity = action.payload.humidity)
+    if action.type == ActionType.SET_EMOTION_LEVELS:
+        if not isinstance(action.payload, dict):
+            raise ValueError("SetEmotionLevels action payload must be a dict.")
+        return replace(state, emotion_levels=action.payload)
     return state

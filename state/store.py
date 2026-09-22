@@ -75,6 +75,8 @@ class StateStore:
             self.bus.publish(EventType.ENVIRONMENT_CHANGED.value, self._state)
         if action.type == ActionType.SET_TEMP_HUMI:
             self.bus.publish(EventType.ENVIRONMENT_CHANGED.value, self._state)
+        if action.type == ActionType.SET_EMOTION_LEVELS:
+            self.bus.publish(EventType.EMOTIONS_UPDATED.value, self._state.emotion_levels)
 
     def subscribe(self, event_type: str, callback: Callable[[Any], None]) -> Callable[[], None]:
         return self.bus.subscribe(event_type, callback)

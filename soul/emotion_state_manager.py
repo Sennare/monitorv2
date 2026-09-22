@@ -1,5 +1,5 @@
 import random
-from state import Mood, SetMood, StateStore, EventType
+from state import Mood, SetMood, StateStore, EventType, SetEmotionLevels
 import asyncio
 
 from .emotions.looking_around import LookingAround
@@ -40,12 +40,20 @@ class EmotionStateManager:
             Mood.LOOKING_AROUND: LookingAround(),
         }
 
+        self.state_store.dispatch(SetEmotionLevels(self.get_emotion_levels()))
+
         # Subscribe to emotion boost events (from navigation / user actions)
         self._unsub_boost = self.state_store.subscribe(EventType.EMOTION_BOOST.value, self._on_boost_emotion)
         self._unsub_knob = self.state_store.subscribe(EventType.KNOB.value, self._on_knob_interacted)
 
         # Tracks consecutive seconds spent in Idle state
         self._idle_seconds = 0
+
+    def get_emotion_levels(self) -> dict[Mood, int]:
+        return {
+            mood: inst.get_emotion().level
+            for mood, inst in self.emotion_instances.items()
+        }
 
     def close(self) -> None:
         """Clean up subscribers."""
@@ -71,6 +79,7 @@ class EmotionStateManager:
             emotion_obj.on_cooldown = False
             emotion_obj.increase_level(60)
             self.check_and_update_mood(preferred_mood=Mood.HAPPY)
+            self.state_store.dispatch(SetEmotionLevels(self.get_emotion_levels()))
 
     def _on_boost_emotion(self, payload) -> None:
         """Handle explicit emotion boost requests from navigation or interactions."""
@@ -91,6 +100,7 @@ class EmotionStateManager:
                         other_emo.level = max(0, emotion_obj.level - 10)
             print(f"[emotion] Boosted emotion {mood.value} by {amount} (new level: {emotion_obj.level})")
             self.check_and_update_mood(preferred_mood=mood)
+            self.state_store.dispatch(SetEmotionLevels(self.get_emotion_levels()))
 
     async def startWorker(self):
         try:
@@ -128,6 +138,9 @@ class EmotionStateManager:
                             self.check_and_update_mood()
                 else:
                     self._idle_seconds = 0
+
+                # 5. Dispatch updated emotion levels to central state
+                self.state_store.dispatch(SetEmotionLevels(self.get_emotion_levels()))
 
                 if self.debug_mode:
                     self.debug_print_emotions_levels()

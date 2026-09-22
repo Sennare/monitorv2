@@ -2,7 +2,7 @@ import unittest
 import time
 from datetime import datetime, timedelta
 
-from state import StateStore, EventType, Mood, AppState, Knob, KnobUserAction, BoostEmotion, SetTemAndHumi, TempAndHumi
+from state import StateStore, EventType, Mood, AppState, Knob, KnobUserAction, BoostEmotion, SetTemAndHumi, TempAndHumi, SetEmotionLevels
 from display.lcd_core import LCDCore
 from display.animations.welcome import CuteCiaoAnimation
 from soul.emotion_state_manager import EmotionStateManager
@@ -10,6 +10,7 @@ from navigation.navigation import Navigation, Location
 from navigation.locations.menu import Menu
 from navigation.locations.home import Home, get_temp_color
 from navigation.locations.settings import Settings
+from navigation.locations.emotions_page import EmotionsPage
 
 
 class TestLCDCoreAndNavigation(unittest.TestCase):
@@ -87,13 +88,15 @@ class TestLCDCoreAndNavigation(unittest.TestCase):
         self.store.dispatch(Knob(KnobUserAction.PRESS))
         self.assertEqual(nav.current_location_id, Location.MENU.value)
 
-        # In menu, rotate to Settings (index 2: Home=0, Sensors=1, Settings=2)
+        # In menu, rotate to Settings (index 3: Home=0, Sensors=1, Emotions=2, Settings=3)
         menu_page: Menu = nav.pages[Location.MENU.value]
         menu_page.selected_index = 0
         self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))  # index 1: Sensors
         self.assertEqual(menu_page.selected_index, 1)
-        self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))  # index 2: Settings
+        self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))  # index 2: Emotions
         self.assertEqual(menu_page.selected_index, 2)
+        self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))  # index 3: Settings
+        self.assertEqual(menu_page.selected_index, 3)
 
         # Press knob to enter Settings
         self.store.dispatch(Knob(KnobUserAction.PRESS))
@@ -350,6 +353,90 @@ class TestLCDCoreAndNavigation(unittest.TestCase):
         self.store.dispatch(Knob(KnobUserAction.TURN_LEFT))
         self.assertEqual(self.store.state.mood, Mood.ANGRY)
         emotion_manager.close()
+
+    def test_navigation_menu_and_emotions_flow(self):
+        """Verify Home -> Menu -> Emotions -> Menu navigation flow via knob."""
+        nav = Navigation(start_with_welcome=False)
+        self.navs.append(nav)
+        self.assertEqual(nav.current_location_id, Location.HOME.value)
+
+        # Press knob to enter Menu
+        self.store.dispatch(Knob(KnobUserAction.PRESS))
+        self.assertEqual(nav.current_location_id, Location.MENU.value)
+
+        # Rotate to Emotions (index 2)
+        menu_page: Menu = nav.pages[Location.MENU.value]
+        menu_page.selected_index = 0
+        self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))  # 1: Sensors
+        self.assertEqual(menu_page.selected_index, 1)
+        self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))  # 2: Emotions
+        self.assertEqual(menu_page.selected_index, 2)
+
+        # Press knob to enter Emotions view
+        self.store.dispatch(Knob(KnobUserAction.PRESS))
+        self.assertEqual(nav.current_location_id, Location.EMOTIONS.value)
+
+        # Pressing knob inside Emotions returns back to Menu
+        self.store.dispatch(Knob(KnobUserAction.PRESS))
+        self.assertEqual(nav.current_location_id, Location.MENU.value)
+
+    def test_emotions_page_render_all_bars_and_active_highlight(self):
+        """Verify EmotionsPage renders all 11 emotions with bars and active highlight without crashing."""
+        emotions_page = EmotionsPage()
+        levels = {
+            Mood.HAPPY: 80,
+            Mood.CURIOUS: 45,
+            Mood.THINKING: 10,
+            Mood.LOOKING_AROUND: 90,
+            Mood.NEUTRAL: 0,
+            Mood.BORED: 25,
+            Mood.CONFUSED: 15,
+            Mood.SAD: 30,
+            Mood.ANGRY: 70,
+            Mood.TOO_COLD: 5,
+            Mood.TOO_HOT: 0,
+        }
+        state = AppState(mood=Mood.HAPPY, emotion_levels=levels)
+        emotions_page.render(self.lcd, state)
+
+        # Render with different active mood and check stability
+        for test_mood in (Mood.ANGRY, Mood.NEUTRAL, Mood.CURIOUS, Mood.LOOKING_AROUND):
+            st = AppState(mood=test_mood, emotion_levels=levels)
+            emotions_page.render(self.lcd, st)
+
+    def test_set_emotion_levels_action_and_event(self):
+        """Verify SetEmotionLevels updates AppState and dispatches EventType.EMOTIONS_UPDATED."""
+        received = []
+        unsub = self.store.subscribe(EventType.EMOTIONS_UPDATED.value, lambda payload: received.append(payload))
+
+        new_levels = {Mood.HAPPY: 95, Mood.ANGRY: 40}
+        self.store.dispatch(SetEmotionLevels(new_levels))
+
+        self.assertEqual(self.store.state.emotion_levels[Mood.HAPPY], 95)
+        self.assertEqual(self.store.state.emotion_levels[Mood.ANGRY], 40)
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0][Mood.HAPPY], 95)
+        unsub()
+
+    def test_emotions_view_refreshes_on_emotions_updated(self):
+        """Verify Navigation re-renders when on EMOTIONS page upon receiving EMOTIONS_UPDATED."""
+        nav = Navigation(start_with_welcome=False)
+        self.navs.append(nav)
+
+        nav.navigate_to(Location.EMOTIONS.value)
+        self.assertEqual(nav.current_location_id, Location.EMOTIONS.value)
+
+        # Dispatch emotion level update
+        render_called = False
+        orig_render = nav.render
+        def mock_render():
+            nonlocal render_called
+            render_called = True
+            orig_render()
+        nav.render = mock_render
+
+        self.store.dispatch(SetEmotionLevels({Mood.HAPPY: 75}))
+        self.assertTrue(render_called)
 
 
 if __name__ == "__main__":

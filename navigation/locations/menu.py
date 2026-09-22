@@ -5,6 +5,7 @@ from display.ui_icons import (
     draw_home_icon,
     draw_chart_icon,
     draw_settings_icon,
+    draw_heart_icon,
     draw_chevron,
 )
 from state import AppState, KnobUserAction
@@ -20,6 +21,7 @@ class Menu(AbstractLocation):
     ITEMS = [
         ("Homepage", "HOME", draw_home_icon),
         ("Sensors Info", "SENSORS", draw_chart_icon),
+        ("Emotions Level", "EMOTIONS", draw_heart_icon),
         ("Settings", "SETTINGS", draw_settings_icon),
     ]
 
@@ -43,8 +45,8 @@ class Menu(AbstractLocation):
         draw.text((14, 23), "Select a screen location", font=font_sub, fill=(107, 114, 128))
 
         # --- Menu Cards ---
-        start_y = 52
-        card_h = 46
+        start_y = 48
+        card_h = 44
         spacing = 10
 
         for idx, (label, _, icon_fn) in enumerate(self.ITEMS):
@@ -80,18 +82,18 @@ class Menu(AbstractLocation):
 
             # Icon badge box
             draw.rounded_rectangle(
-                (24, y + 9, 52, y + card_h - 9),
+                (24, y + 8, 52, y + card_h - 8),
                 radius=6,
                 fill=badge_bg,
             )
-            icon_fn(draw, 30, y + 15, size=16, color=icon_color)
+            icon_fn(draw, 30, y + 14, size=16, color=icon_color)
 
             # Text label
-            draw.text((64, y + 14), label, font=font_item, fill=text_color)
+            draw.text((64, y + 13), label, font=font_item, fill=text_color)
 
             # Right chevron arrow
             chevron_color = (56, 189, 248) if is_selected else (55, 65, 81)
-            draw_chevron(draw, lcd.width - 26, y + 18, size=5, direction="right", color=chevron_color, width=2)
+            draw_chevron(draw, lcd.width - 26, y + 17, size=5, direction="right", color=chevron_color, width=2)
 
         # --- Footer Pill ---
         hint_y = 276
