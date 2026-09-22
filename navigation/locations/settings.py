@@ -1,27 +1,28 @@
 from PIL import Image, ImageDraw
 from ..abstract_location import AbstractLocation
 from display.lcd_core import LCDCore
+from display.ui_icons import draw_warning_icon, draw_chevron
 from state import AppState, KnobUserAction, StateStore, BoostEmotion, Mood
 from typing import Optional
 
 
 class Settings(AbstractLocation):
     """
-    Settings Location:
-    Entering this screen angers the appliance ("the thing doesn't want to be adjusted!"),
-    immediately triggering the ANGRY emotion and facial expression on the OLED display!
+    Modern Minimalist Settings Screen.
+    Entering angers the companion ("doesn't want to be adjusted!"),
+    immediately triggering the ANGRY emotion and expression on the OLED display.
     """
 
     ITEMS = [
-        ("• Personality Recalibration", "DENIED"),
-        ("• Inactivity Timeout: 45s", "FIXED"),
-        ("• Mood Bias: Grumpy", "LOCKED"),
-        ("◀ Back to Menu", "BACK"),
+        ("Personality Profile", "DENIED"),
+        ("Inactivity Sleep: 45s", "FIXED"),
+        ("Mood Sensitivity: High", "LOCKED"),
+        ("Back to Menu", "BACK"),
     ]
 
     def __init__(self):
         self.state_store = StateStore()
-        self.selected_index = len(self.ITEMS) - 1  # Default to "Back" for safety
+        self.selected_index = len(self.ITEMS) - 1  # Default to Back for safety
         self.alert_message: Optional[str] = None
 
     def on_enter(self) -> None:
@@ -31,57 +32,87 @@ class Settings(AbstractLocation):
         self.alert_message = "HEY! Don't touch me! >:("
 
     def render(self, lcd: LCDCore, state: AppState) -> None:
-        img = Image.new("RGB", (lcd.width, lcd.height), (24, 12, 16))  # Deep crimson dark background
+        bg_color = (20, 10, 14)  # Obsidian crimson dark
+        img = Image.new("RGB", (lcd.width, lcd.height), bg_color)
         draw = ImageDraw.Draw(img)
 
-        font_title = lcd._get_font(size=16, bold=True)
-        font_warn = lcd._get_font(size=13, bold=True)
-        font_item = lcd._get_font(size=13, bold=False)
+        font_header = lcd._get_font(size=14, bold=True)
+        font_sub = lcd._get_font(size=10, bold=False)
+        font_warn = lcd._get_font(size=12, bold=True)
+        font_item = lcd._get_font(size=12, bold=True)
+        font_status = lcd._get_font(size=10, bold=False)
         font_hint = lcd._get_font(size=11, italic=True)
 
         # --- Header ---
-        draw.rectangle((0, 0, lcd.width, 42), fill=(127, 29, 29))  # Dark red
-        draw.text((15, 12), "⚠️ SYSTEM SETTINGS", font=font_title, fill=(254, 202, 202))
-        draw.line([(0, 42), (lcd.width, 42)], fill=(185, 28, 28), width=2)
+        draw.rectangle((0, 0, lcd.width, 38), fill=(127, 29, 29))
+        draw.line([(0, 38), (lcd.width, 38)], fill=(185, 28, 28), width=1)
+        draw_warning_icon(draw, 14, 11, size=16, color=(254, 202, 202))
+        draw.text((36, 8), "SYSTEM SETTINGS", font=font_header, fill=(254, 226, 226))
+        draw.text((36, 23), "Protected appliance parameters", font=font_sub, fill=(252, 165, 165))
 
-        # --- Angry Alert Banner ---
-        banner_text = self.alert_message or "System does not want changes!"
-        draw.rectangle((10, 50, lcd.width - 10, 86), fill=(153, 27, 27), outline=(239, 68, 68), width=1)
-        draw.text((18, 54), "REACTION:", font=font_hint, fill=(254, 226, 226))
-        draw.text((18, 68), banner_text, font=font_warn, fill=(254, 240, 138))
+        # --- Angry Reaction Banner ---
+        banner_text = self.alert_message or "System resists modification!"
+        draw.rounded_rectangle(
+            (12, 46, lcd.width - 12, 82),
+            radius=6,
+            fill=(153, 27, 27),
+            outline=(239, 68, 68),
+            width=1,
+        )
+        draw.text((20, 50), "REACTION:", font=font_sub, fill=(254, 202, 202))
+        draw.text((20, 63), banner_text, font=font_warn, fill=(254, 240, 138))
 
         # --- Settings Items ---
-        start_y = 96
-        item_height = 38
-        spacing = 8
+        start_y = 92
+        card_h = 40
+        spacing = 7
 
         for idx, (label, value) in enumerate(self.ITEMS):
-            y = start_y + idx * (item_height + spacing)
+            y = start_y + idx * (card_h + spacing)
             is_selected = idx == self.selected_index
+            is_back = value == "BACK"
 
             if is_selected:
-                draw.rectangle(
-                    (10, y, lcd.width - 10, y + item_height),
-                    fill=(185, 28, 28),
-                    outline=(252, 165, 165),
-                    width=2,
-                )
+                card_bg = (153, 27, 27) if not is_back else (30, 41, 59)
+                card_outline = (248, 113, 113) if not is_back else (96, 165, 250)
                 text_color = (255, 255, 255)
-                draw.text((16, y + 10), f"▶ {label}", font=font_item, fill=text_color)
+                val_color = (254, 240, 138) if not is_back else (147, 197, 253)
             else:
-                draw.rectangle(
-                    (10, y, lcd.width - 10, y + item_height),
-                    fill=(69, 10, 10),
-                    outline=(127, 29, 29),
-                    width=1,
-                )
-                text_color = (254, 202, 202)
-                draw.text((20, y + 10), label, font=font_item, fill=text_color)
+                card_bg = (45, 12, 18) if not is_back else (17, 24, 39)
+                card_outline = (88, 20, 30) if not is_back else (31, 41, 55)
+                text_color = (248, 113, 113) if not is_back else (156, 163, 175)
+                val_color = (185, 28, 28) if not is_back else (107, 114, 128)
 
-        # --- Footer Hint ---
-        draw.rectangle((0, 280, lcd.width, lcd.height), fill=(24, 12, 16))
-        draw.line([(0, 280), (lcd.width, 280)], fill=(127, 29, 29), width=1)
-        draw.text((15, 290), "Turn: Select   •   Click: Interact", font=font_hint, fill=(252, 165, 165))
+            draw.rounded_rectangle(
+                (12, y, lcd.width - 12, y + card_h),
+                radius=6,
+                fill=card_bg,
+                outline=card_outline,
+                width=1 if not is_selected else 2,
+            )
+
+            # Left accent pill for selected item
+            if is_selected:
+                accent_color = (248, 113, 113) if not is_back else (96, 165, 250)
+                draw.rounded_rectangle((12, y + 6, 16, y + card_h - 6), radius=2, fill=accent_color)
+
+            if is_back:
+                draw_chevron(draw, 22, y + 15, size=5, direction="left", color=text_color, width=2)
+                draw.text((36, y + 13), label, font=font_item, fill=text_color)
+            else:
+                draw.text((22, y + 7), label, font=font_item, fill=text_color)
+                draw.text((22, y + 23), f"[{value}]", font=font_status, fill=val_color)
+
+        # --- Footer Pill ---
+        hint_y = 276
+        draw.rounded_rectangle(
+            (12, hint_y, lcd.width - 12, hint_y + 34),
+            radius=6,
+            fill=(45, 12, 18),
+            outline=(88, 20, 30),
+            width=1,
+        )
+        draw.text((20, hint_y + 9), "Rotate: Select   •   Press: Trigger", font=font_hint, fill=(252, 165, 165))
 
         lcd.render_image(img)
 

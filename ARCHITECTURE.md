@@ -71,6 +71,7 @@ remote-monitor/
 │   ├── oled.py                 # SSD1306 I2C OLED driver with event-driven thread
 │   ├── lcd.py                  # HD44780 20x4 I2C LCD driver with diff-caching
 │   ├── lcd_core.py             # ILI9341 240x320 SPI display engine with PIL canvas
+│   ├── ui_icons.py             # Crisp vector graphics icons (home, chart, settings, etc.)
 │   └── animations/             # Screen animations for color LCD
 │       ├── lcd_animation.py    # Base class for PIL frame animations
 │       ├── cat_blink.py        # Cute cat blinking graphic animation
@@ -108,12 +109,13 @@ remote-monitor/
 | `soul/emotions/base_emotion.py` | Encapsulates emotion levels (0–100), peak cooldown trigger at 100, and automatic cooldown recovery when decayed back to 0. |
 | `soul/emotions/*.py` | Implements domain-specific stimuli reactions (e.g. knob presses, presence arrival, temperature alerts). |
 | `soul/moods/*.py` | Generates procedural monochrome PIL image frames representing animated facial expressions for the OLED. |
-| `input/knob_controller2.py` | Translates hardware rotary encoder pin transitions and button presses into typed `Knob` actions. |
+| `input/knob_controller2.py` | Decodes physical quadrature rotary encoder transitions (`gpiozero.RotaryEncoder`) and button presses into typed `Knob` actions. |
 | `input/movement.py` | Interfaces with PIR sensor, managing debounced detection and a 60-second absence timer. |
 | `input/temp.py` | Reads temperature and relative humidity from the AHTx0 I2C sensor every 5 seconds. |
 | `display/oled.py` | Displays animated expressions on the SSD1306 OLED; handles power states via `device.hide()` / `device.show()`. |
 | `display/lcd.py` | Drives HD44780 20x4 LCD via PCF8574 with smart line-differential updates to minimize I2C bus load. |
 | `display/lcd_core.py` | Provides drawing primitives, thread-safe animation cancellation (`_anim_stop_event`, `_disp_lock`), and automated 45-second inactivity backlight power management for the ILI9341 SPI color TFT display. |
+| `display/ui_icons.py` | Procedural vector icon drawing library (Home, Sensors, Settings, Mascot, Thermometer, Chevrons) replacing missing font emojis. |
 | `display/animations/` | Defines frame sequences for full-color LCD animations using PIL vector drawing. |
 | `navigation/` | Stateful screen manager (`Welcome`, `Home`, `Menu`, `Settings`, `Sensors`, `Cat`) routing encoder rotations/presses and triggering navigation-linked emotions. |
 | `database/database.py` | Executes SQL queries and transactional inserts using `psycopg2`. |
@@ -233,9 +235,9 @@ The application interfaces directly with Raspberry Pi 3 physical header pins via
 | **TFT LCD Reset (RST)** | Direct GPIO | Pin 33 | GPIO 13 (`board.D13`)| Active Low Hardware Reset |
 | **TFT LCD Backlight (BL/LED)** | Direct GPIO | Pin 31 | GPIO 6 (`board.D6`) | High = On, Low = Off; managed by inactivity timer |
 | **PIR Motion Sensor** | Direct GPIO | Pin 29 | GPIO 5 | Active High, `pull_up=False`, `bounce_time=0.1s` |
-| **Rotary Encoder Button** | Direct GPIO | Pin 11 | GPIO 17 | Active Low, internal pull-up, `bounce_time=0.1s` |
-| **Rotary Encoder Left (A)** | Direct GPIO | Pin 13 | GPIO 27 | Active Low, internal pull-up, `bounce_time=0.1s` |
-| **Rotary Encoder Right (B)** | Direct GPIO | Pin 15 | GPIO 22 | Active Low, internal pull-up, `bounce_time=0.1s` |
+| **Rotary Encoder Button** | Direct GPIO | Pin 11 | GPIO 17 | Active Low, internal pull-up, `bounce_time=0.05s` |
+| **Rotary Encoder Left (A)** | Direct GPIO | Pin 13 | GPIO 27 | Active Low, internal pull-up, quadrature channel A |
+| **Rotary Encoder Right (B)** | Direct GPIO | Pin 15 | GPIO 22 | Active Low, internal pull-up, quadrature channel B |
 
 ### Interface Details
 - **I2C Bus 1 Configuration:**
@@ -291,7 +293,7 @@ When developing or modifying code for this project, all future contributors (AI 
 
 ### 3. Hardware Error Handling & Fault Isolation
 - **I2C Bus Recovery:** Transient electrical noise on I2C buses is common on breadboard-connected Raspberry Pis. All I2C read/write routines (in `Temp`, `Lcd`, and `OledDisplay`) must wrap bus transactions in `try...except (OSError, IOError):` blocks so an isolated communication glitch does not crash the entire application process.
-- **Rotary Encoder Debounce:** Mechanical rotary switches produce high-frequency contact bounce. Always specify `bounce_time` on `gpiozero.Button` inputs and implement software locks (such as `rotation_lock` in `KnobController`) to avoid triggering hundreds of spurious state updates.
+- **Rotary Encoder Quadrature Decoding:** Mechanical rotary encoders must use true quadrature Gray-code decoding (via `gpiozero.RotaryEncoder`) across channels A (GPIO 27) and B (GPIO 22) rather than treating channels as independent buttons with artificial delay-based debounce locks. Quadrature state transitions inherently reject single-pin mechanical chatter while reliably capturing rapid clockwise and counter-clockwise detent clicks.
 - **Hardware Mutexes & Non-blocking Tasks:** If a background task might take longer than its execution interval, use non-blocking lock acquisition (`if self._task_lock.acquire(blocking=False): ...`) as demonstrated in `soul/emotions/base_emotion.py`. Never spawn unbounded threads.
 
 ### 4. Display Life & Power Conservation
