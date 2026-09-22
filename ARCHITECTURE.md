@@ -74,7 +74,6 @@ remote-monitor/
 │   ├── ui_icons.py             # Crisp vector graphics icons (home, chart, settings, etc.)
 │   └── animations/             # Screen animations for color LCD
 │       ├── lcd_animation.py    # Base class for PIL frame animations
-│       ├── cat_blink.py        # Cute cat blinking graphic animation
 │       └── welcome.py          # Dynamic bouncy greeting animation
 ├── navigation/                 # Screen navigation and UI flow
 │   ├── __init__.py             # Navigation package initializer
@@ -82,13 +81,12 @@ remote-monitor/
 │   ├── navigation.py           # Navigation manager subscribed to knob inputs & 45s inactivity
 │   └── locations/              # Concrete UI screens
 │       ├── welcome_page.py     # Startup welcome animation & auto-transition
-│       ├── home.py             # Home telemetry dashboard screen
+│       ├── home.py             # Home dashboard with 24h pixel-binned graph & time-travel
 │       ├── menu.py             # Interactive vertical selection menu
 │       ├── settings.py         # System settings (triggers ANGRY emotion on soul)
-│       ├── sensors_page.py     # Detailed environmental telemetry (triggers CURIOUS)
-│       └── cat_page.py         # Looping cat mascot animation screen
+│       └── sensors_page.py     # Detailed environmental telemetry (triggers CURIOUS)
 ├── database/                   # Persistence layer
-│   ├── database.py             # PostgreSQL client (psycopg2) for insert/query
+│   ├── database.py             # PostgreSQL client (psycopg2) for insert/query & time-range fetch
 │   └── librian.py              # Telemetry buffering and 15-minute persistence worker
 └── dashboard/                  # Standalone telemetry web dashboard
     ├── requirements.txt        # Dashboard-specific dependencies
@@ -115,10 +113,10 @@ remote-monitor/
 | `display/oled.py` | Displays animated expressions on the SSD1306 OLED; handles power states via `device.hide()` / `device.show()`. |
 | `display/lcd.py` | Drives HD44780 20x4 LCD via PCF8574 with smart line-differential updates to minimize I2C bus load. |
 | `display/lcd_core.py` | Provides drawing primitives, thread-safe animation cancellation (`_anim_stop_event`, `_disp_lock`), and automated 45-second inactivity backlight power management for the ILI9341 SPI color TFT display. |
-| `display/ui_icons.py` | Procedural vector icon drawing library (Home, Sensors, Settings, Mascot, Thermometer, Chevrons) replacing missing font emojis. |
+| `display/ui_icons.py` | Procedural vector icon drawing library (Home, Sensors, Settings, Thermometer, Chevrons) replacing missing font emojis. |
 | `display/animations/` | Defines frame sequences for full-color LCD animations using PIL vector drawing. |
-| `navigation/` | Stateful screen manager (`Welcome`, `Home`, `Menu`, `Settings`, `Sensors`, `Cat`) routing encoder rotations/presses and triggering navigation-linked emotions. |
-| `database/database.py` | Executes SQL queries and transactional inserts using `psycopg2`. |
+| `navigation/` | Stateful screen manager (`Welcome`, `Home`, `Menu`, `Settings`, `Sensors`) routing encoder rotations/presses and triggering navigation-linked emotions. |
+| `database/database.py` | Executes SQL queries, transactional inserts, and time-range historical telemetry fetches using `psycopg2`. |
 | `database/librian.py` | Listens to environmental telemetry and executes scheduled database commits every 15 minutes. |
 | `dashboard/main.py` | Exposes REST endpoints (`/api/data`) with slot-aggregated sensor metrics and serves web assets. |
 
@@ -202,7 +200,7 @@ flowchart TD
 5. **Subsystem Reaction:**
    - **OLED Controller:** On `mood.changed`, updates its target mood and awakens its animation thread immediately via `threading.Event.set()`. On `environment.changed`, calls `device.show()` or `device.hide()` depending on presence.
    - **Emotion Engine:** Specific emotion classes increment internal levels upon receiving relevant bus events, and `EmotionStateManager` handles `emotion.boost` to immediately elevate target emotions (e.g., Angry on Settings navigation).
-   - **Navigation:** Manages active LCD pages (`Welcome`, `Home`, `Menu`, `Settings`, `Sensors`, `Cat Mascot`). Handles display sleep/wake: turns off display after 45s of inactivity, wakes up on knob interaction, and updates views.
+   - **Navigation:** Manages active LCD pages (`Welcome`, `Home`, `Menu`, `Settings`, `Sensors`). Handles display sleep/wake: turns off display after 45s of inactivity, wakes up on knob interaction, and updates views. On `Home`, rotary turns navigate back/forward across historical 24h telemetry (capped at now), while press opens `Menu`. Waking up or entering Home resets the time travel back to now.
    - **Librian:** Caches the latest valid telemetry and writes it to PostgreSQL every 15 minutes.
 
 ### Concurrency Architecture

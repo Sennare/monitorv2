@@ -1,13 +1,14 @@
 import unittest
 import time
+from datetime import datetime, timedelta
+
 from state import StateStore, EventType, Mood, AppState, Knob, KnobUserAction, BoostEmotion
 from display.lcd_core import LCDCore
 from display.animations.welcome import CuteCiaoAnimation
-from display.animations.cat_blink import CuteCatBlinkAnimation
 from soul.emotion_state_manager import EmotionStateManager
 from navigation.navigation import Navigation, Location
 from navigation.locations.menu import Menu
-from navigation.locations.home import Home
+from navigation.locations.home import Home, bin_and_average_slots
 from navigation.locations.settings import Settings
 
 
@@ -29,7 +30,7 @@ class TestLCDCoreAndNavigation(unittest.TestCase):
     def test_lcd_concurrency_stop_animation(self):
         """Verify that starting an animation and interrupting it stops the first thread cleanly."""
         anim1 = CuteCiaoAnimation()
-        anim2 = CuteCatBlinkAnimation()
+        anim2 = CuteCiaoAnimation()
 
         # Start first animation
         self.lcd.play_animation(anim1, frame_delay=0.1, cycles=10)
@@ -136,16 +137,124 @@ class TestLCDCoreAndNavigation(unittest.TestCase):
         self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))
         self.assertEqual(nav.current_location_id, Location.HOME.value)
 
-    def test_cat_mascot_page_and_exit(self):
-        """Verify navigating to Cat mascot page and returning to Menu."""
+    def test_home_knob_time_travel_and_menu_press(self):
+        """Verify Home rotary scrolling shifts hours back, caps forward at 0, and PRESS navigates to Menu."""
         nav = Navigation(start_with_welcome=False)
         self.navs.append(nav)
-        nav.navigate_to(Location.CAT.value)
-        self.assertEqual(nav.current_location_id, Location.CAT.value)
+        home_page: Home = nav.pages[Location.HOME.value]
+        self.assertEqual(home_page.hours_offset, 0)
 
-        # Interacting with knob exits to Menu
+        # Rotate left: go back in time
+        self.store.dispatch(Knob(KnobUserAction.TURN_LEFT))
+        self.assertEqual(home_page.hours_offset, 1)
+        self.assertEqual(nav.current_location_id, Location.HOME.value)
+
+        self.store.dispatch(Knob(KnobUserAction.TURN_LEFT))
+        self.assertEqual(home_page.hours_offset, 2)
+
+        # Rotate right: scroll forward towards now
+        self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))
+        self.assertEqual(home_page.hours_offset, 1)
+
+        self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))
+        self.assertEqual(home_page.hours_offset, 0)
+
+        # Rotate right again: MUST NOT go into future (stop at 0)
+        self.store.dispatch(Knob(KnobUserAction.TURN_RIGHT))
+        self.assertEqual(home_page.hours_offset, 0)
+
+        # Pressing knob on Home navigates to Menu
         self.store.dispatch(Knob(KnobUserAction.PRESS))
         self.assertEqual(nav.current_location_id, Location.MENU.value)
+
+    def test_home_reset_time_travel_on_reenter_and_wake(self):
+        """Verify time travel resets to 0 when re-entering Home or waking up from sleep."""
+        nav = Navigation(start_with_welcome=False)
+        self.navs.append(nav)
+        home_page: Home = nav.pages[Location.HOME.value]
+
+        # Shift time back
+        home_page.hours_offset = 8
+
+        # Navigate away to Menu and back to Home
+        nav.navigate_to(Location.MENU.value)
+        self.assertEqual(nav.current_location_id, Location.MENU.value)
+
+        nav.navigate_to(Location.HOME.value)
+        self.assertEqual(nav.current_location_id, Location.HOME.value)
+        self.assertEqual(home_page.hours_offset, 0, "Entering Home should reset time travel to 0")
+
+        # Shift time back again
+        home_page.hours_offset = 12
+
+        # Display goes to sleep
+        nav.lcd.turn_off()
+        self.assertFalse(nav.lcd.is_screen_on)
+
+        # Interaction in sleep wakes display and resets Home to 0
+        self.store.dispatch(Knob(KnobUserAction.TURN_LEFT))
+        self.assertTrue(nav.lcd.is_screen_on)
+        self.assertEqual(home_page.hours_offset, 0, "Waking display should reset time travel to 0")
+
+    def test_bin_and_average_slots(self):
+        """Verify time-series telemetry is correctly slotted per pixel width, averaged, and interpolated."""
+        now = datetime(2026, 9, 22, 12, 0, 0)
+        start_time = now - timedelta(hours=24)
+        width_px = 24  # 1 pixel per hour for clean assertions
+
+        # Generate sample points:
+        # Hour 0: two readings (20.0 and 22.0 -> avg 21.0, humi 50 and 60 -> avg 55.0)
+        # Hour 2: one reading (25.0, 70.0)
+        # Hour 1 has no readings -> should be interpolated between Hour 0 and Hour 2!
+        raw_data = [
+            (start_time + timedelta(minutes=10), 20.0, 50.0),
+            (start_time + timedelta(minutes=40), 22.0, 60.0),
+            (start_time + timedelta(hours=2, minutes=30), 26.0, 70.0),
+        ]
+
+        temp_series, humi_series = bin_and_average_slots(raw_data, start_time, now, width_px)
+
+        self.assertEqual(len(temp_series), width_px)
+        self.assertEqual(len(humi_series), width_px)
+
+        # Hour 0 average
+        self.assertAlmostEqual(temp_series[0], 21.0, places=2)
+        self.assertAlmostEqual(humi_series[0], 55.0, places=2)
+
+        # Hour 2 average
+        self.assertAlmostEqual(temp_series[2], 26.0, places=2)
+        self.assertAlmostEqual(humi_series[2], 70.0, places=2)
+
+        # Hour 1 interpolated (midpoint between 21.0 and 26.0 -> 23.5)
+        self.assertAlmostEqual(temp_series[1], 23.5, places=2)
+        self.assertAlmostEqual(humi_series[1], 62.5, places=2)
+
+    def test_home_render_with_and_without_data(self):
+        """Verify Home.render() executes without error both when telemetry is available and when empty."""
+        class MockDB:
+            def fetch_time_range(self, start_time, end_time):
+                return [
+                    (start_time + timedelta(hours=1), 22.5, 45.0),
+                    (start_time + timedelta(hours=5), 23.1, 48.0),
+                    (start_time + timedelta(hours=18), 21.0, 52.0),
+                ]
+
+        home_with_data = Home(db=MockDB())
+        state = AppState(temperature=22.4, humidity=50.0)
+        # Should render without exception
+        home_with_data.render(self.lcd, state)
+
+        # Render with time travel offset
+        home_with_data.hours_offset = 3
+        home_with_data.render(self.lcd, state)
+
+        # Empty DB
+        class EmptyDB:
+            def fetch_time_range(self, start_time, end_time):
+                return []
+
+        home_empty = Home(db=EmptyDB())
+        home_empty.render(self.lcd, state)
 
 
 if __name__ == "__main__":

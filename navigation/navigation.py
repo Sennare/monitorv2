@@ -10,7 +10,6 @@ from .locations.home import Home
 from .locations.menu import Menu
 from .locations.settings import Settings
 from .locations.sensors_page import SensorsPage
-from .locations.cat_page import CatPage
 
 
 class Location(str, Enum):
@@ -19,7 +18,6 @@ class Location(str, Enum):
     MENU = "MENU"
     SETTINGS = "SETTINGS"
     SENSORS = "SENSORS"
-    CAT = "CAT"
 
 
 class Navigation:
@@ -43,7 +41,6 @@ class Navigation:
             Location.MENU.value: Menu(),
             Location.SETTINGS.value: Settings(),
             Location.SENSORS.value: SensorsPage(),
-            Location.CAT.value: CatPage(),
         }
 
         # Set initial location
@@ -112,6 +109,8 @@ class Navigation:
             # If screen is currently off, turn it on and wake up without triggering accidental actions
             if not self.lcd.is_screen_on:
                 print("[nav] Knob interacted while display sleeping. Waking up display.")
+                if hasattr(self.current_page, "reset_time_travel"):
+                    self.current_page.reset_time_travel()
                 self.lcd.turn_on()
                 self.render()
                 return

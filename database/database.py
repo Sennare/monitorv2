@@ -1,9 +1,15 @@
-import psycopg2
+try:
+    import psycopg2
+except ImportError:
+    psycopg2 = None
+
 from datetime import datetime, timedelta
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 db_config = {
     "host": "localhost",
@@ -15,6 +21,8 @@ db_config = {
 class Database:
     def save(self, temperature, humidity):
         """Salva i dati su PostgreSQL."""
+        if psycopg2 is None:
+            return False
         try:
             conn = psycopg2.connect(**db_config)
             cursor = conn.cursor()
@@ -31,6 +39,8 @@ class Database:
             return False
     def fetch_historical_data(self, hours=24):
         """Recupera e raggruppa i dati storici."""
+        if psycopg2 is None:
+            return []
         try:
             conn = psycopg2.connect(**db_config)
             cursor = conn.cursor()
@@ -75,4 +85,22 @@ class Database:
             
         except Exception as e:
             print(f"Errore recupero dati: {e}")
+            return []
+
+    def fetch_time_range(self, start_time: datetime, end_time: datetime):
+        """Recupera le misurazioni tra start_time ed end_time ordinate per tempo."""
+        if psycopg2 is None:
+            return []
+        try:
+            conn = psycopg2.connect(**db_config)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT time, temperature, humidity FROM sensor_data WHERE time BETWEEN %s AND %s ORDER BY time ASC",
+                (start_time, end_time)
+            )
+            raw_data = cursor.fetchall()
+            cursor.close()
+            conn.close()
+            return raw_data
+        except Exception as e:
             return []

@@ -5,7 +5,6 @@ from display.ui_icons import (
     draw_home_icon,
     draw_chart_icon,
     draw_settings_icon,
-    draw_mascot_icon,
     draw_chevron,
 )
 from state import AppState, KnobUserAction
@@ -22,7 +21,6 @@ class Menu(AbstractLocation):
         ("Homepage", "HOME", draw_home_icon),
         ("Sensors Info", "SENSORS", draw_chart_icon),
         ("Settings", "SETTINGS", draw_settings_icon),
-        ("Cat Mascot", "CAT", draw_mascot_icon),
     ]
 
     def __init__(self):
