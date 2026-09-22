@@ -17,33 +17,61 @@ class OledDisplay:
 
         self.current_mood = Mood.NEUTRAL
         
-        # Unico evento per svegliare il thread immediatamente se il mood cambia
-        self._mood_changed_event = threading.Event()
-        
-        # Avvia un UNICO thread persistente in background
+        # Event to wake the animation loop immediately on mood or presence changes
+        self._wake_event = threading.Event()
+
+        # Track presence state directly
+        self.someone_around = self.state_store.state.someone_around
+
+        # Display starts hidden if nobody is around
+        if not self.someone_around:
+            try:
+                self.device.clear()
+                self.device.hide()
+            except Exception as e:
+                print(f"[oled] Error initializing display state: {e}")
+
+        # Start persistent background animation thread
         self._anim_thread = threading.Thread(target=self._animation_loop, daemon=True)
         self._anim_thread.start()
 
     def _on_mood_changed(self, mood: Mood) -> None:
-        """Callback non bloccante: aggiorna lo stato e sveglia il thread."""
+        """Non-blocking callback: update state and signal display thread."""
         print(f"[oled] Mood changed to {mood.value}, signaling display thread...")
         self.current_mood = mood
-        self._mood_changed_event.set() # Interrompe immediatamente il time.sleep del thread
+        self._wake_event.set()
 
     def _on_env_changed(self, app_state: AppState) -> None:
-        if (app_state.someone_around):
-            self.device.show()
-        else:
-            self.device.hide()
+        if app_state.someone_around != self.someone_around:
+            print(f"[oled] Presence changed to {app_state.someone_around}")
+            self.someone_around = app_state.someone_around
+            if self.someone_around:
+                try:
+                    self.device.show()
+                except Exception as e:
+                    print(f"[oled] Error showing display: {e}")
+            else:
+                try:
+                    self.device.clear()
+                    self.device.hide()
+                except Exception as e:
+                    print(f"[oled] Error hiding display: {e}")
+            self._wake_event.set()
 
     def _animation_loop(self) -> None:
-        """Loop infinito del thread in background."""
+        """Background thread loop: runs animations only while someone is around."""
         last_mood = None
         frames = []
         idx = 0
 
         while True:
-            # Se il mood è cambiato rispetto all'ultimo ciclo, ricarica i frame
+            # If nobody is around, wait indefinitely until woken up by presence change
+            if not self.someone_around:
+                self._wake_event.wait()
+                self._wake_event.clear()
+                continue
+
+            # If mood changed, reload frames
             if self.current_mood != last_mood:
                 last_mood = self.current_mood
                 try:
@@ -52,10 +80,10 @@ class OledDisplay:
                     self.device.hide()
                 except Exception:
                     frames = [Image.new("1", (128, 64))]
-                idx = 0 # Resetta l'indice dell'animazione
+                idx = 0  # Reset animation index
 
-            # Rendering del frame corrente
-            if frames:
+            # Render current frame only when someone is around
+            if frames and self.someone_around:
                 frame = frames[idx % len(frames)]
                 try:
                     self.device.display(frame)
@@ -65,18 +93,16 @@ class OledDisplay:
                     print("[oled] Error displaying frame, skipping...")
                 idx += 1
 
-            # TRUCCO CHIAVE: Invece di time.sleep(0.5), aspettiamo l'evento.
-            # Se l'evento viene attivato (set), il wait si interrompe SUBITO.
-            # Se non viene attivato, aspetta 0.5 secondi (il tuo framerate).
-            self._mood_changed_event.wait(timeout=0.5)
-            self._mood_changed_event.clear()
+            # Wait 0.5s or wake immediately if mood or presence changes
+            self._wake_event.wait(timeout=0.5)
+            self._wake_event.clear()
 
     def display_message(self, message: str) -> None:
-        # Nota: se usi questo metodo, potresti voler sospendere temporaneamente il loop dell'animazione
         image = Image.new("1", (128, 64))
         draw = ImageDraw.Draw(image)
         draw.text((10, 10), message, fill="white", font=self.font)
         try:
+            self.device.show()
             self.device.display(image)
         except KeyboardInterrupt:
             self.device.hide()
