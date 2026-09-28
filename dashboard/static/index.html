@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#070a12" />
+  <meta name="description" content="Dashboard telemetria temperatura e umidità per tablet e smartphone" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Casa Frizzellato — Monitor Ambientale</title>
+
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌡️</text></svg>" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <!-- Real-time Error / Reconnection Toast -->
+  <div id="toastBanner" class="toast-banner" role="alert" aria-live="assertive">
+    <span class="toast-icon">⚠️</span>
+    <span id="toastMessage">Connessione persa. Riconnessione...</span>
+  </div>
+
+  <div class="app-container">
+    <!-- Header: Title, Telemetry Snapshot & Controls -->
+    <header class="header-bar">
+      <!-- Left: Title & Status -->
+      <div class="brand-section">
+        <h1 class="brand-title">Casa Frizzellato</h1>
+        <div id="statusPill" class="status-pill">
+          <span class="status-dot"></span>
+          <span id="statusText">ONLINE</span>
+        </div>
+      </div>
+
+      <!-- Center: Current Telemetry Snapshot Badges -->
+      <div class="telemetry-summary">
+        <div class="telemetry-card temp" title="Temperatura Attuale">
+          <span class="telemetry-icon">🌡️</span>
+          <div class="telemetry-info">
+            <span class="telemetry-label">Temperatura</span>
+            <span id="valTemp" class="telemetry-value">--.- °C</span>
+          </div>
+        </div>
+
+        <div class="telemetry-card hum" title="Umidità Attuale">
+          <span class="telemetry-icon">💧</span>
+          <div class="telemetry-info">
+            <span class="telemetry-label">Umidità</span>
+            <span id="valHum" class="telemetry-value">--.- %</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Time Filter & Kiosk Tools -->
+      <div class="controls-section">
+        <!-- Time Filter Selector -->
+        <nav id="timeframeGroup" class="timeframe-group" aria-label="Filtro Intervallo Temporale">
+          <button type="button" class="time-btn" data-timeframe="6h">6h</button>
+          <button type="button" class="time-btn" data-timeframe="12h">12h</button>
+          <button type="button" class="time-btn" data-timeframe="24h">24h</button>
+          <button type="button" class="time-btn" data-timeframe="3d">3g</button>
+          <button type="button" class="time-btn" data-timeframe="7d">7g</button>
+          <button type="button" class="time-btn" data-timeframe="30d">30g</button>
+        </nav>
+
+        <!-- Kiosk Screen Keep-Awake Toggle Button -->
+        <button id="btnWakeLock" type="button" class="icon-btn" title="Schermo sempre attivo (Wake Lock)" aria-label="Wake Lock">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </button>
+
+        <!-- Fullscreen Toggle Button -->
+        <button id="btnFullscreen" type="button" class="icon-btn" title="Schermo Intero" aria-label="Schermo Intero">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <polyline points="9 21 3 21 3 15"></polyline>
+            <line x1="21" y1="3" x2="14" y2="10"></line>
+            <line x1="3" y1="21" x2="10" y2="14"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Full-Screen Chart Container -->
+    <main class="chart-wrapper">
+      <div class="chart-header">
+        <div class="chart-legend">
+          <div class="legend-item">
+            <span class="legend-badge temp"></span>
+            <span>Temperatura (°C)</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-badge hum"></span>
+            <span>Umidità (% RH)</span>
+          </div>
+        </div>
+        <div id="lastUpdated" class="last-updated">In attesa dei dati...</div>
+      </div>
+
+      <div class="chart-canvas-box">
+        <canvas id="mainChart"></canvas>
+        <div id="chartTooltip" class="chart-tooltip"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Local Offline-Ready Scripts -->
+  <script src="/static/js/chart_engine.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
