@@ -295,8 +295,11 @@ class LCDCore:
 
         try:
             return ImageFont.truetype(font_path, size)
-        except IOError:
-            return ImageFont.load_default()
+        except (IOError, OSError):
+            try:
+                return ImageFont.load_default(size=size)
+            except TypeError:
+                return ImageFont.load_default()
 
     # ==========================================
     # Animation Control & Concurrency Safety

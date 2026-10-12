@@ -10,6 +10,7 @@ Adafruit-Blinka>=8.0.0
 adafruit-circuitpython-ahtx0>=1.0.30
 adafruit-circuitpython-rgb-display>=3.14.0
 adafruit-circuitpython-ili9341>=2.0.0
+numpy>=1.24.0
 
 # GPIO & Sensors
 gpiozero>=2.0.1

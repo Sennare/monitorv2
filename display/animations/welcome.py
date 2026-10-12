@@ -14,8 +14,11 @@ class CuteCiaoAnimation(LcdAnimation):
         # Cerchiamo di caricare un font decente, altrimenti fallback
         try:
             font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
-        except IOError:
-            font_large = ImageFont.load_default()
+        except (IOError, OSError):
+            try:
+                font_large = ImageFont.load_default(size=40)
+            except TypeError:
+                font_large = ImageFont.load_default()
 
         for i in range(3):
             # RGB mode è richiesto dalla libreria adafruit

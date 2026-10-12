@@ -30,7 +30,12 @@ echo "  - Utente di esecuzione: $ACTUAL_USER (Home: $USER_HOME)"
 # 1. System Dependencies Check & Installation
 # ------------------------------------------------------------------------------
 echo "==> Controllo dipendenze di sistema (apt)..."
-SYS_PACKAGES=("python3" "python3-venv" "python3-pip" "python3-dev" "build-essential" "swig" "libgpiod-dev" "i2c-tools")
+SYS_PACKAGES=(
+    "python3" "python3-venv" "python3-pip" "python3-dev" "build-essential"
+    "swig" "libgpiod-dev" "i2c-tools" "python3-numpy" "python3-smbus"
+    "python3-spidev" "python3-gpiozero" "python3-rpi-lgpio" "python3-lgpio"
+    "fonts-dejavu-core"
+)
 MISSING_PACKAGES=()
 
 for pkg in "${SYS_PACKAGES[@]}"; do
