@@ -19,6 +19,7 @@
 
   const state = {
     timeframe: localStorage.getItem('cf_timeframe') || '24h',
+    visibleSeries: { temp: true, hum: true },
     chart: null,
     isFetching: false,
     refreshTimerId: null,
@@ -36,6 +37,10 @@
     statusText: document.getElementById('statusText'),
     valTemp: document.getElementById('valTemp'),
     valHum: document.getElementById('valHum'),
+    cardTemp: document.getElementById('cardTemp'),
+    cardHum: document.getElementById('cardHum'),
+    legendTemp: document.getElementById('legendTemp'),
+    legendHum: document.getElementById('legendHum'),
     lastUpdated: document.getElementById('lastUpdated'),
     timeframeGroup: document.getElementById('timeframeGroup'),
     btnWakeLock: document.getElementById('btnWakeLock'),
@@ -287,10 +292,82 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Metric Series Filtering (Tap Temp -> Only Temp, Tap Hum -> Only Hum)
+  // ---------------------------------------------------------------------------
+  function toggleSeriesFilter(targetSeries) {
+    const isTempOnly = state.visibleSeries.temp && !state.visibleSeries.hum;
+    const isHumOnly = !state.visibleSeries.temp && state.visibleSeries.hum;
+    const isBoth = state.visibleSeries.temp && state.visibleSeries.hum;
+
+    if (targetSeries === 'temp') {
+      if (isBoth) {
+        // Tapped Temp while both visible -> show ONLY Temp
+        state.visibleSeries = { temp: true, hum: false };
+      } else if (isTempOnly) {
+        // Tapped Temp again while already only Temp -> restore both
+        state.visibleSeries = { temp: true, hum: true };
+      } else {
+        // Tapped Temp while only Hum is visible -> switch to ONLY Temp
+        state.visibleSeries = { temp: true, hum: false };
+      }
+    } else if (targetSeries === 'hum') {
+      if (isBoth) {
+        // Tapped Hum while both visible -> show ONLY Hum
+        state.visibleSeries = { temp: false, hum: true };
+      } else if (isHumOnly) {
+        // Tapped Hum again while already only Hum -> restore both
+        state.visibleSeries = { temp: true, hum: true };
+      } else {
+        // Tapped Hum while only Temp is visible -> switch to ONLY Hum
+        state.visibleSeries = { temp: false, hum: true };
+      }
+    }
+
+    updateFilterUI();
+    if (state.chart) {
+      state.chart.setVisibleSeries(state.visibleSeries);
+    }
+  }
+
+  function updateFilterUI() {
+    if (elements.cardTemp) {
+      elements.cardTemp.classList.toggle('inactive', !state.visibleSeries.temp);
+    }
+    if (elements.legendTemp) {
+      elements.legendTemp.classList.toggle('inactive', !state.visibleSeries.temp);
+    }
+    if (elements.cardHum) {
+      elements.cardHum.classList.toggle('inactive', !state.visibleSeries.hum);
+    }
+    if (elements.legendHum) {
+      elements.legendHum.classList.toggle('inactive', !state.visibleSeries.hum);
+    }
+  }
+
+  function initSeriesFilterButtons() {
+    const bindFilter = (el, type) => {
+      if (!el) return;
+      el.addEventListener('click', () => toggleSeriesFilter(type));
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggleSeriesFilter(type);
+        }
+      });
+    };
+
+    bindFilter(elements.cardTemp, 'temp');
+    bindFilter(elements.legendTemp, 'temp');
+    bindFilter(elements.cardHum, 'hum');
+    bindFilter(elements.legendHum, 'hum');
+  }
+
+  // ---------------------------------------------------------------------------
   // Application Entry Point
   // ---------------------------------------------------------------------------
   function init() {
     initTimeframeButtons();
+    initSeriesFilterButtons();
     bindLifecycleEvents();
 
     // Instantiate Canvas Chart Engine

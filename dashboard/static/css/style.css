@@ -216,6 +216,41 @@ body::after {
   color: var(--color-hum);
 }
 
+/* Interactive filterable cards */
+.telemetry-card.clickable {
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+.telemetry-card.clickable:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.telemetry-card.clickable:active {
+  transform: scale(0.97);
+}
+
+.telemetry-card.inactive {
+  opacity: 0.32;
+  filter: grayscale(75%);
+  border-style: dashed;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.telemetry-card.temp:not(.inactive) {
+  border-color: rgba(255, 107, 107, 0.35);
+  box-shadow: 0 0 12px rgba(255, 107, 107, 0.1);
+}
+
+.telemetry-card.hum:not(.inactive) {
+  border-color: rgba(34, 211, 238, 0.35);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.1);
+}
+
+
 /* Time Filter Segmented Buttons */
 .controls-section {
   display: flex;
@@ -339,6 +374,32 @@ body::after {
   background: var(--color-hum);
   box-shadow: 0 0 6px var(--color-hum-glow);
 }
+
+.legend-item.clickable {
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.legend-item.clickable:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border-subtle);
+}
+
+.legend-item.clickable:active {
+  transform: scale(0.96);
+}
+
+.legend-item.inactive {
+  opacity: 0.32;
+  filter: grayscale(75%);
+  text-decoration: line-through;
+}
+
 
 .chart-canvas-box {
   position: relative;

@@ -15,6 +15,7 @@ class TelemetryChart {
     this.tooltip = tooltipElement;
 
     this.data = []; // [{ timestamp: Date, temperature: number|null, humidity: number|null }]
+    this.visibleSeries = { temp: true, hum: true };
     this.activePointIndex = null;
     this.animFrameId = null;
 
@@ -87,6 +88,15 @@ class TelemetryChart {
     this.render();
   }
 
+  setVisibleSeries(visibility) {
+    if (!visibility) return;
+    this.visibleSeries = {
+      temp: visibility.temp !== undefined ? Boolean(visibility.temp) : true,
+      hum: visibility.hum !== undefined ? Boolean(visibility.hum) : true,
+    };
+    this.render();
+  }
+
   _bindEvents() {
     const handlePointer = (evt) => {
       if (!this.data.length) return;
@@ -148,13 +158,24 @@ class TelemetryChart {
       second: '2-digit',
     });
 
-    const tempStr = pt.temperature != null ? `${pt.temperature.toFixed(1)} °C` : '--';
-    const humStr = pt.humidity != null ? `${pt.humidity.toFixed(1)} %` : '--';
+    let rowsHtml = '';
+    if (this.visibleSeries.temp) {
+      const tempStr = pt.temperature != null ? `${pt.temperature.toFixed(1)} °C` : '--';
+      rowsHtml += `<div class="tooltip-row temp"><span>Temperatura</span><span>${tempStr}</span></div>`;
+    }
+    if (this.visibleSeries.hum) {
+      const humStr = pt.humidity != null ? `${pt.humidity.toFixed(1)} %` : '--';
+      rowsHtml += `<div class="tooltip-row hum"><span>Umidità</span><span>${humStr}</span></div>`;
+    }
+
+    if (!rowsHtml) {
+      this._hideTooltip();
+      return;
+    }
 
     this.tooltip.innerHTML = `
       <div class="tooltip-time">${timeStr}</div>
-      <div class="tooltip-row temp"><span>Temperatura</span><span>${tempStr}</span></div>
-      <div class="tooltip-row hum"><span>Umidità</span><span>${humStr}</span></div>
+      ${rowsHtml}
     `;
 
     this.tooltip.style.display = 'block';
@@ -243,8 +264,11 @@ class TelemetryChart {
     this.maxTime = extents.maxTime;
     const { minTemp, maxTemp, minHum, maxHum } = extents;
 
-    const pLeft = this.margins.left;
-    const pRight = w - this.margins.right;
+    const showTemp = this.visibleSeries.temp;
+    const showHum = this.visibleSeries.hum;
+
+    const pLeft = showTemp ? this.margins.left : 24;
+    const pRight = w - (showHum ? this.margins.right : 24);
     const pTop = this.margins.top;
     const pBottom = h - this.margins.bottom;
     const pWidth = pRight - pLeft;
@@ -259,7 +283,6 @@ class TelemetryChart {
 
     // 1. Draw Horizontal Gridlines & Y-Axis Labels
     const numYSteps = 5;
-    ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     ctx.font = this.colors.font;
 
@@ -276,27 +299,35 @@ class TelemetryChart {
       ctx.stroke();
 
       // Left axis label (Temperature °C)
-      const tVal = minTemp + stepRatio * (maxTemp - minTemp);
-      ctx.fillStyle = this.colors.temp;
-      ctx.fillText(`${tVal.toFixed(1)}°`, pLeft - 10, y);
+      if (showTemp) {
+        const tVal = minTemp + stepRatio * (maxTemp - minTemp);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = this.colors.temp;
+        ctx.fillText(`${tVal.toFixed(1)}°`, pLeft - 10, y);
+      }
 
       // Right axis label (Humidity %)
-      const hVal = Math.round(minHum + stepRatio * (maxHum - minHum));
-      ctx.fillStyle = this.colors.hum;
-      ctx.textAlign = 'left';
-      ctx.fillText(`${hVal}%`, pRight + 10, y);
-      ctx.textAlign = 'right';
+      if (showHum) {
+        const hVal = Math.round(minHum + stepRatio * (maxHum - minHum));
+        ctx.textAlign = 'left';
+        ctx.fillStyle = this.colors.hum;
+        ctx.fillText(`${hVal}%`, pRight + 10, y);
+      }
     }
 
     // Axis Unit Header Labels
     ctx.font = this.colors.fontBold;
-    ctx.fillStyle = this.colors.temp;
-    ctx.textAlign = 'right';
-    ctx.fillText('°C', pLeft - 10, pTop - 12);
+    if (showTemp) {
+      ctx.fillStyle = this.colors.temp;
+      ctx.textAlign = 'right';
+      ctx.fillText('°C', pLeft - 10, pTop - 12);
+    }
 
-    ctx.fillStyle = this.colors.hum;
-    ctx.textAlign = 'left';
-    ctx.fillText('%', pRight + 10, pTop - 12);
+    if (showHum) {
+      ctx.fillStyle = this.colors.hum;
+      ctx.textAlign = 'left';
+      ctx.fillText('%', pRight + 10, pTop - 12);
+    }
 
     // 2. Draw Time X-Axis Ticks & Labels
     const numXSteps = w > 600 ? 6 : 4;
@@ -323,48 +354,55 @@ class TelemetryChart {
       ctx.fillText(label, x, pBottom + 12);
     }
 
-    if (!this.data.length) {
+    if (!this.data.length || (!showTemp && !showHum)) {
       ctx.fillStyle = this.colors.axisText;
       ctx.font = '15px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('Nessun dato registrato per il periodo selezionato', w / 2, h / 2);
+      const msg = !this.data.length
+        ? 'Nessun dato registrato per il periodo selezionato'
+        : 'Tutti i grafici sono nascosti. Tocca Temperatura o Umidità per visualizzare.';
+      ctx.fillText(msg, w / 2, h / 2);
       return;
     }
 
     // 3. Draw Humidity Series (Area + Spline)
-    this._drawSeries({
-      ctx,
-      points: this.data,
-      xFn: (p) => xForTime(p.timestamp.getTime()),
-      yFn: (p) => p.humidity != null ? yForHum(p.humidity) : null,
-      valFn: (p) => p.humidity,
-      strokeColor: this.colors.hum,
-      fillStart: this.colors.humFillStart,
-      fillEnd: this.colors.humFillEnd,
-      lineWidth: 2.5,
-      pBottom,
-      pTop,
-      pLeft,
-      pRight,
-    });
+    if (showHum) {
+      this._drawSeries({
+        ctx,
+        points: this.data,
+        xFn: (p) => xForTime(p.timestamp.getTime()),
+        yFn: (p) => p.humidity != null ? yForHum(p.humidity) : null,
+        valFn: (p) => p.humidity,
+        strokeColor: this.colors.hum,
+        fillStart: this.colors.humFillStart,
+        fillEnd: this.colors.humFillEnd,
+        lineWidth: 2.5,
+        pBottom,
+        pTop,
+        pLeft,
+        pRight,
+      });
+    }
 
     // 4. Draw Temperature Series (Area + Spline)
-    this._drawSeries({
-      ctx,
-      points: this.data,
-      xFn: (p) => xForTime(p.timestamp.getTime()),
-      yFn: (p) => p.temperature != null ? yForTemp(p.temperature) : null,
-      valFn: (p) => p.temperature,
-      strokeColor: this.colors.temp,
-      fillStart: this.colors.tempFillStart,
-      fillEnd: this.colors.tempFillEnd,
-      lineWidth: 3.2,
-      pBottom,
-      pTop,
-      pLeft,
-      pRight,
-    });
+    if (showTemp) {
+      this._drawSeries({
+        ctx,
+        points: this.data,
+        xFn: (p) => xForTime(p.timestamp.getTime()),
+        yFn: (p) => p.temperature != null ? yForTemp(p.temperature) : null,
+        valFn: (p) => p.temperature,
+        strokeColor: this.colors.temp,
+        fillStart: this.colors.tempFillStart,
+        fillEnd: this.colors.tempFillEnd,
+        lineWidth: 3.2,
+        pBottom,
+        pTop,
+        pLeft,
+        pRight,
+      });
+    }
 
     // 5. Draw Interactive Crosshair & Highlight Dots
     if (this.activePointIndex !== null && this.activePointIndex < this.data.length) {
@@ -382,7 +420,7 @@ class TelemetryChart {
       ctx.setLineDash([]);
 
       // Highlight dot for Humidity
-      if (activePt.humidity != null) {
+      if (showHum && activePt.humidity != null) {
         const hy = yForHum(activePt.humidity);
         ctx.fillStyle = '#0f172a';
         ctx.strokeStyle = this.colors.hum;
@@ -394,7 +432,7 @@ class TelemetryChart {
       }
 
       // Highlight dot for Temperature
-      if (activePt.temperature != null) {
+      if (showTemp && activePt.temperature != null) {
         const ty = yForTemp(activePt.temperature);
         ctx.fillStyle = '#0f172a';
         ctx.strokeStyle = this.colors.temp;
@@ -406,6 +444,7 @@ class TelemetryChart {
       }
     }
   }
+
 
   _drawSeries({ ctx, points, xFn, yFn, valFn, strokeColor, fillStart, fillEnd, lineWidth, pBottom, pTop, pLeft, pRight }) {
     // Extract valid contiguous segments (to gracefully handle gaps without invalid spikes)

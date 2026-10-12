@@ -31,9 +31,9 @@
         </div>
       </div>
 
-      <!-- Center: Current Telemetry Snapshot Badges -->
+      <!-- Center: Current Telemetry Snapshot Badges (Clickable Filters) -->
       <div class="telemetry-summary">
-        <div class="telemetry-card temp" title="Temperatura Attuale">
+        <div id="cardTemp" class="telemetry-card temp clickable" role="button" tabindex="0" title="Tocca per filtrare: mostra solo Temperatura (tocca di nuovo per mostrare entrambi)">
           <span class="telemetry-icon">🌡️</span>
           <div class="telemetry-info">
             <span class="telemetry-label">Temperatura</span>
@@ -41,7 +41,7 @@
           </div>
         </div>
 
-        <div class="telemetry-card hum" title="Umidità Attuale">
+        <div id="cardHum" class="telemetry-card hum clickable" role="button" tabindex="0" title="Tocca per filtrare: mostra solo Umidità (tocca di nuovo per mostrare entrambi)">
           <span class="telemetry-icon">💧</span>
           <div class="telemetry-info">
             <span class="telemetry-label">Umidità</span>
@@ -92,12 +92,13 @@
     <!-- Main Full-Screen Chart Container -->
     <main class="chart-wrapper">
       <div class="chart-header">
+        <!-- Interactive Legend Filters -->
         <div class="chart-legend">
-          <div class="legend-item">
+          <div id="legendTemp" class="legend-item clickable" role="button" tabindex="0" title="Tocca per filtrare Temperatura">
             <span class="legend-badge temp"></span>
             <span>Temperatura (°C)</span>
           </div>
-          <div class="legend-item">
+          <div id="legendHum" class="legend-item clickable" role="button" tabindex="0" title="Tocca per filtrare Umidità">
             <span class="legend-badge hum"></span>
             <span>Umidità (% RH)</span>
           </div>

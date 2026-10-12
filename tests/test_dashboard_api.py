@@ -32,9 +32,13 @@ class TestDashboardStaticFiles(unittest.TestCase):
         self.assertIn('id="btnWakeLock"', content)
         self.assertIn('id="btnFullscreen"', content)
 
-        # Verify Telemetry Cards
+        # Verify Telemetry Cards & Filterable Targets
         self.assertIn('id="valTemp"', content)
         self.assertIn('id="valHum"', content)
+        self.assertIn('id="cardTemp"', content)
+        self.assertIn('id="cardHum"', content)
+        self.assertIn('id="legendTemp"', content)
+        self.assertIn('id="legendHum"', content)
         self.assertIn('id="statusPill"', content)
 
         # Verify Timeframe Buttons (6h, 12h, 24h, 3d, 7d, 30d)
@@ -54,6 +58,8 @@ class TestDashboardStaticFiles(unittest.TestCase):
 
         # Verify Responsive rules
         self.assertIn("@media (max-width: 768px)", content)
+        self.assertIn(".telemetry-card.inactive", content)
+        self.assertIn(".legend-item.inactive", content)
 
     def test_chart_engine_js(self):
         chart_js = STATIC_DIR / "js" / "chart_engine.js"
@@ -63,6 +69,7 @@ class TestDashboardStaticFiles(unittest.TestCase):
         # Verify TelemetryChart class and methods
         self.assertIn("class TelemetryChart", content)
         self.assertIn("setData(", content)
+        self.assertIn("setVisibleSeries(", content)
         self.assertIn("resize(", content)
         self.assertIn("render(", content)
         self.assertIn("destroy(", content)
@@ -73,11 +80,12 @@ class TestDashboardStaticFiles(unittest.TestCase):
         self.assertTrue(app_js.is_file(), "app.js must exist in static/js/")
         content = app_js.read_text(encoding="utf-8")
 
-        # Verify auto-refresh, backoff, and wake lock
+        # Verify auto-refresh, backoff, wake lock, and series filtering
         self.assertIn("REFRESH_INTERVAL_MS", content)
         self.assertIn("BASE_RETRY_DELAY_MS", content)
         self.assertIn("wakeLock", content)
         self.assertIn("visibilitychange", content)
+        self.assertIn("toggleSeriesFilter", content)
         self.assertIn("/api/history", content)
         self.assertIn("/api/latest", content)
 
