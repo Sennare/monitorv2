@@ -27,36 +27,59 @@ echo "  - Cartella progetto: $PROJECT_DIR"
 echo "  - Utente di esecuzione: $ACTUAL_USER (Home: $USER_HOME)"
 
 # ------------------------------------------------------------------------------
-# 1. Virtual Environment Setup
+# 1. System Dependencies Check & Installation
 # ------------------------------------------------------------------------------
-# Check if a python virtual environment already exists in the project or specify custom path
+echo "==> Controllo dipendenze di sistema (apt)..."
+SYS_PACKAGES=("python3" "python3-venv" "python3-pip" "python3-dev" "build-essential" "swig" "libgpiod-dev" "i2c-tools")
+MISSING_PACKAGES=()
+
+for pkg in "${SYS_PACKAGES[@]}"; do
+    if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+        MISSING_PACKAGES+=("$pkg")
+    fi
+done
+
+if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
+    echo "==> Installazione pacchetti di sistema mancanti: ${MISSING_PACKAGES[*]}..."
+    apt-get update
+    apt-get install -y "${MISSING_PACKAGES[@]}"
+fi
+
+# ------------------------------------------------------------------------------
+# 2. Virtual Environment Setup
+# ------------------------------------------------------------------------------
 VENV_DIR="$PROJECT_DIR/.venv"
 
-if [ ! -d "$VENV_DIR" ]; then
-    # Check if a global legacy venv exists (e.g. ~/venv-monitor) as a fallback
+if [ ! -d "$VENV_DIR" ] || [ ! -f "$VENV_DIR/bin/python" ]; then
+    # Clean up incomplete venv if present
+    if [ -d "$VENV_DIR" ]; then
+        rm -rf "$VENV_DIR"
+    fi
+
+    # Check if a global legacy venv exists (e.g. ~/venv-monitor) as fallback
     if [ -f "$USER_HOME/venv-monitor/bin/python" ]; then
         echo "==> Trovato virtualenv esistente in $USER_HOME/venv-monitor"
         PYTHON_BIN="$USER_HOME/venv-monitor/bin/python"
     else
-        echo "==> Creazione virtualenv in $VENV_DIR..."
-        sudo -u "$ACTUAL_USER" python3 -m venv "$VENV_DIR"
+        echo "==> Creazione virtualenv in $VENV_DIR (con --system-site-packages)..."
+        sudo -u "$ACTUAL_USER" python3 -m venv --system-site-packages "$VENV_DIR"
         PYTHON_BIN="$VENV_DIR/bin/python"
         
-        echo "==> Installazione dipendenze da requirements.txt..."
+        echo "==> Aggiornamento pip & installazione dipendenze da requirements.txt..."
         if [ -f "$PROJECT_DIR/requirements.txt" ]; then
             sudo -u "$ACTUAL_USER" "$PYTHON_BIN" -m pip install --upgrade pip
             sudo -u "$ACTUAL_USER" "$PYTHON_BIN" -m pip install -r "$PROJECT_DIR/requirements.txt"
         fi
     fi
 else
-    echo "==> Trovato virtualenv in $VENV_DIR"
+    echo "==> Trovato virtualenv esistente in $VENV_DIR"
     PYTHON_BIN="$VENV_DIR/bin/python"
 fi
 
 echo "  - Python binario utilizzato: $PYTHON_BIN"
 
 # ------------------------------------------------------------------------------
-# 2. Generate and Install Systemd Services
+# 3. Generate and Install Systemd Services
 # ------------------------------------------------------------------------------
 TEMPLATE_DIR="$PROJECT_DIR/scripts/services"
 TARGET_DIR="/etc/systemd/system"
@@ -83,7 +106,7 @@ generate_service "$TEMPLATE_DIR/dashboard.service.template" "$TARGET_DIR/dashboa
 echo "  - Installato: $TARGET_DIR/dashboard.service"
 
 # ------------------------------------------------------------------------------
-# 3. Enable and Start Services
+# 4. Enable and Start Services
 # ------------------------------------------------------------------------------
 echo "==> Ricarica configurazione systemd e avvio servizi..."
 systemctl daemon-reload

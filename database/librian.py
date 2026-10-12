@@ -13,6 +13,7 @@ class Librian:
         self.humidity = 0
         self.got_first_event = False
 
+        self._first_reading_event = threading.Event()
         self._stop_event = threading.Event()
         self._is_closed = False
         self._persist_thread = threading.Thread(target=self._persist_runner, daemon=True)
@@ -26,21 +27,35 @@ class Librian:
         self.got_first_event = True
         self.temperature = app_state.temperature
         self.humidity = app_state.humidity
+        self._first_reading_event.set()
+
+    def _save_measurement(self) -> None:
+        try:
+            self.databse.save(
+                self.temperature,
+                self.humidity
+            )
+        except Exception:
+            if not self._stop_event.is_set():
+                print(f"[librian] unable to persist temperature and humidity")
 
     def _persist_runner(self) -> None:
+        # Attende la prima lettura valida dal sensore (oppure lo shutdown)
+        while not self._stop_event.is_set():
+            if self._first_reading_event.wait(timeout=1.0):
+                break
+
+        # Salva immediatamente all'avvio non appena è disponibile la prima lettura
+        if not self._stop_event.is_set() and self.got_first_event:
+            self._save_measurement()
+
+        # Prosegue salvando a intervalli regolari di 15 minuti
         while not self._stop_event.is_set():
             if self._stop_event.wait(timeout=60 * 15):
                 break
             if not self.got_first_event or self._stop_event.is_set():
                 continue
-            try:
-                self.databse.save(
-                    self.temperature,
-                    self.humidity
-                )
-            except Exception:
-                if not self._stop_event.is_set():
-                    print(f"[librian] unable to persist temperature and humidity")
+            self._save_measurement()
 
     def close(self) -> None:
         """Stops persist thread and unsubscribes from state store cleanly."""
@@ -48,6 +63,7 @@ class Librian:
             return
         self._is_closed = True
         self._stop_event.set()
+        self._first_reading_event.set()
         if hasattr(self, "_unsub") and self._unsub:
             try:
                 self._unsub()
