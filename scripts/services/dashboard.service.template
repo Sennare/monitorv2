@@ -1,0 +1,16 @@
+[Unit]
+Description=Sensors Dashboard FastAPI Server
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User={{USER}}
+WorkingDirectory={{PROJECT_DIR}}/dashboard
+ExecStart={{PYTHON_BIN}} -m uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
